@@ -61,7 +61,7 @@ export function ExportCaseMenu({ onPreviewExport, onReleaseExport, disabled }: P
             >
               <span className="font-semibold text-on-surface">Release PDF</span>
               <span className="mt-0.5 block text-on-surface-variant">
-                Flattens redacted pages to images — text cannot be copied out
+                Flattens only redacted regions to images — rest stays selectable text
               </span>
             </button>
           </div>

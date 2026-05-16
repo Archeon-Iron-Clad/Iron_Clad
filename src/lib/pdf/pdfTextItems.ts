@@ -44,6 +44,38 @@ export function textItemToBounds(
   return { index, str: item.str, left, top, width, height }
 }
 
+/** Split a PDF text run into one bounds box per character (proportional widths). */
+function expandToCharacterBounds(
+  item: PdfTextItem,
+  runIndex: number,
+  viewport: { transform: number[]; scale: number },
+): TextItemBounds[] {
+  const text = item.str
+  if (!text) return []
+
+  const run = textItemToBounds(item, runIndex, viewport)
+  const chars = [...text]
+  if (chars.length === 1) return [run]
+
+  const step = run.width / chars.length
+  return chars.map((ch, i) => ({
+    index: runIndex * 10_000 + i,
+    str: ch,
+    left: run.left + i * step,
+    top: run.top,
+    width: Math.max(step, 0.5),
+    height: run.height,
+  }))
+}
+
+export function sortReadingOrder(items: TextItemBounds[]): TextItemBounds[] {
+  return [...items].sort((a, b) => {
+    const dy = a.top - b.top
+    if (Math.abs(dy) > 2) return dy
+    return a.left - b.left
+  })
+}
+
 export async function loadPageTextBounds(
   pdf: PDFDocumentProxy,
   pageNumber: number,
@@ -56,8 +88,8 @@ export async function loadPageTextBounds(
   const items: TextItemBounds[] = []
   let i = 0
   for (const raw of content.items) {
-    if (!isTextItem(raw) || !raw.str.trim()) continue
-    items.push(textItemToBounds(raw, i++, viewport))
+    if (!isTextItem(raw) || raw.str.length === 0) continue
+    items.push(...expandToCharacterBounds(raw, i++, viewport))
   }
 
   return {
@@ -97,7 +129,7 @@ export function itemsInDragRect(
   return items.filter((item) => rectsIntersect(item, norm))
 }
 
-/** Closest non-empty item to a point (for click-to-select word). */
+/** Closest glyph to a point (for click-to-select). */
 export function itemAtPoint(items: TextItemBounds[], x: number, y: number): TextItemBounds | null {
   let hit: TextItemBounds | null = null
   let bestDist = Infinity
@@ -112,7 +144,58 @@ export function itemAtPoint(items: TextItemBounds[], x: number, y: number): Text
       }
     }
   }
+  if (hit) return hit
+
+  const sorted = sortReadingOrder(items)
+  for (const item of sorted) {
+    const cx = item.left + item.width / 2
+    const cy = item.top + item.height / 2
+    const d = (cx - x) ** 2 + (cy - y) ** 2
+    if (d < bestDist) {
+      bestDist = d
+      hit = item
+    }
+  }
   return hit
+}
+
+function nearestItemIndex(sorted: TextItemBounds[], x: number, y: number): number {
+  if (sorted.length === 0) return 0
+  const hit = itemAtPoint(sorted, x, y)
+  if (hit) {
+    const idx = sorted.findIndex((item) => item.index === hit.index)
+    if (idx >= 0) return idx
+  }
+  let best = 0
+  let bestDist = Infinity
+  for (let i = 0; i < sorted.length; i++) {
+    const item = sorted[i]
+    const cx = item.left + item.width / 2
+    const cy = item.top + item.height / 2
+    const d = (cx - x) ** 2 + (cy - y) ** 2
+    if (d < bestDist) {
+      bestDist = d
+      best = i
+    }
+  }
+  return best
+}
+
+/**
+ * Select glyphs from anchor to focus in reading order (letter-by-letter drag).
+ */
+export function itemsInSelectionRange(
+  items: TextItemBounds[],
+  anchor: { x: number; y: number },
+  focus: { x: number; y: number },
+): TextItemBounds[] {
+  if (items.length === 0) return []
+  const sorted = sortReadingOrder(items)
+  const a = nearestItemIndex(sorted, anchor.x, anchor.y)
+  const b = nearestItemIndex(sorted, focus.x, focus.y)
+  const lo = Math.min(a, b)
+  const hi = Math.max(a, b)
+  return sorted.slice(lo, hi + 1)
 }
 
 export function normalizeDragRect(rect: { left: number; top: number; width: number; height: number }) {
@@ -159,6 +242,39 @@ export function groupTextItemsByLine(items: TextItemBounds[]): TextItemBounds[][
   }
   if (current.length > 0) lines.push(current)
   return lines
+}
+
+export type HighlightRect = { left: number; top: number; width: number; height: number }
+
+/**
+ * Merge selected glyphs into a few contiguous highlight runs per line (for UI only).
+ * Selection logic stays per-character; visuals look like normal text selection.
+ */
+export function mergeSelectionHighlightRects(items: TextItemBounds[]): HighlightRect[] {
+  const rects: HighlightRect[] = []
+  for (const line of groupTextItemsByLine(items)) {
+    const sorted = [...line].sort((a, b) => a.left - b.left)
+    let run: TextItemBounds[] = []
+    for (const item of sorted) {
+      if (run.length === 0) {
+        run = [item]
+        continue
+      }
+      const prev = run[run.length - 1]
+      const gap = item.left - (prev.left + prev.width)
+      const maxGap = Math.max(6, prev.height * 0.35)
+      if (gap <= maxGap) {
+        run.push(item)
+      } else {
+        const u = unionBounds(run)
+        if (u) rects.push(u)
+        run = [item]
+      }
+    }
+    const u = unionBounds(run)
+    if (u) rects.push(u)
+  }
+  return rects
 }
 
 /** One bounding box per line of selected text. */

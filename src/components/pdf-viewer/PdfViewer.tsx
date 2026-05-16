@@ -9,7 +9,7 @@ import { usePdfPageText } from '../../lib/hooks/usePdfPageText'
 import { useRedactionDraw } from '../../lib/hooks/useRedactionDraw'
 import {
   itemAtPoint,
-  itemsInDragRect,
+  itemsInSelectionRange,
   lineBoundsFromSelection,
   type TextItemBounds,
 } from '../../lib/pdf/pdfTextItems'
@@ -65,7 +65,6 @@ export function PdfViewer({
   const [toolMode, setToolMode] = useState<RedactionToolMode>('marquee')
 
   const [textDragStart, setTextDragStart] = useState<{ x: number; y: number } | null>(null)
-  const [textDragCurrent, setTextDragCurrent] = useState<{ x: number; y: number } | null>(null)
   const [highlightedText, setHighlightedText] = useState<TextItemBounds[]>([])
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -160,14 +159,7 @@ export function PdfViewer({
         setHighlightedText(hit ? [hit] : [])
         return
       }
-      setHighlightedText(
-        itemsInDragRect(textData.items, {
-          left: start.x,
-          top: start.y,
-          width: dragW,
-          height: dragH,
-        }),
-      )
+      setHighlightedText(itemsInSelectionRange(textData.items, start, current))
     },
     [textData],
   )
@@ -181,7 +173,6 @@ export function PdfViewer({
     capturePointerIdRef.current = e.pointerId
     e.currentTarget.setPointerCapture(e.pointerId)
     setTextDragStart(pt)
-    setTextDragCurrent(pt)
     updateTextHighlight(pt, pt)
   }
 
@@ -189,14 +180,12 @@ export function PdfViewer({
     if (!textDragStart) return
     const pt = clientToViewport(e.clientX, e.clientY)
     if (!pt) return
-    setTextDragCurrent(pt)
     updateTextHighlight(textDragStart, pt)
   }
 
   const finishTextSelection = useCallback(() => {
     if (!pageLayout || !onCreateBox || highlightedText.length === 0) {
       setTextDragStart(null)
-      setTextDragCurrent(null)
       setHighlightedText([])
       releaseCapture()
       return
@@ -211,7 +200,6 @@ export function PdfViewer({
       )
     ) {
       setTextDragStart(null)
-      setTextDragCurrent(null)
       setHighlightedText([])
       releaseCapture()
       return
@@ -225,7 +213,6 @@ export function PdfViewer({
     }
 
     setTextDragStart(null)
-    setTextDragCurrent(null)
     setHighlightedText([])
     releaseCapture()
   }, [highlightedText, onCreateBox, page, pageLayout, releaseCapture, textData?.items.length])
@@ -261,7 +248,6 @@ export function PdfViewer({
         clearDraft()
         releaseCapture()
         setTextDragStart(null)
-        setTextDragCurrent(null)
         setHighlightedText([])
         return
       }
@@ -298,17 +284,10 @@ export function PdfViewer({
     setPageLayout(layout)
   }, [])
 
-  const textAligned =
-    textData !== null &&
-    textData.scale === scale &&
-    textData.pageWidth === pageLayout?.width &&
-    textData.pageHeight === pageLayout?.height
+  const pageOverlayReady =
+    pageLayout !== null && pageLayout.scale === scale && pageLayout.width > 0
 
-  const overlayAligned =
-    pageLayout !== null &&
-    pageLayout.scale === scale &&
-    pageLayout.width > 0 &&
-    (toolMode !== 'select-text' || textAligned)
+  const overlayAligned = pageOverlayReady
 
   useEffect(() => {
     const scroll = scrollRef.current
@@ -330,7 +309,6 @@ export function PdfViewer({
 
   useEffect(() => {
     setTextDragStart(null)
-    setTextDragCurrent(null)
     setHighlightedText([])
   }, [page, toolMode])
 
@@ -339,16 +317,6 @@ export function PdfViewer({
     await onUpdateExemption(selectedBoxId, value === '' ? null : value)
   }
 
-  const textDragRect =
-    textDragStart && textDragCurrent
-      ? {
-          left: textDragStart.x,
-          top: textDragStart.y,
-          width: textDragCurrent.x - textDragStart.x,
-          height: textDragCurrent.y - textDragStart.y,
-        }
-      : null
-
   return (
     <div
       ref={workspaceFocusRef}
@@ -356,14 +324,14 @@ export function PdfViewer({
       className="flex h-full min-h-0 flex-col outline-none"
     >
       <RedactionGuidance />
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant pb-4">
+      <div className="mb-4 flex flex-col gap-3 border-b border-outline-variant pb-4 sm:gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-on-surface">Document workspace</h2>
-          <p className="text-sm text-on-surface-variant">
+          <h2 className="text-xl font-bold tracking-tight text-on-surface sm:text-2xl">Document workspace</h2>
+          <p className="text-xs text-on-surface-variant sm:text-sm">
             Draw redaction boxes on the PDF • {totalPages > 0 ? `${totalPages} pages` : 'No document'}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
           <PageNavigator
             page={page}
             totalPages={totalPages}
@@ -379,7 +347,6 @@ export function PdfViewer({
               clearDraft()
               releaseCapture()
               setTextDragStart(null)
-              setTextDragCurrent(null)
               setHighlightedText([])
               if (m === 'select-text' || m === 'marquee') setSelectedBoxId(null)
             }}
@@ -394,10 +361,10 @@ export function PdfViewer({
             <span className="text-xs text-amber-800">No text on this page — use Marquee</span>
           )}
           {canPersist && onUpdateExemption && (
-            <label className="flex items-center gap-2 text-sm text-on-surface">
+            <label className="flex w-full min-w-0 items-center gap-2 text-sm text-on-surface sm:w-auto">
               <span className="shrink-0">Reason</span>
               <select
-                className="max-w-[220px] rounded border border-outline-variant bg-surface px-2 py-1 text-sm disabled:opacity-50"
+                className="min-w-0 flex-1 rounded border border-outline-variant bg-surface px-2 py-1 text-sm disabled:opacity-50 sm:max-w-[280px] sm:flex-none"
                 disabled={!selectedBoxId}
                 value={selectedBox?.exemptionCodeId ?? ''}
                 onChange={(e) => void onExemptionChange(e.target.value)}
@@ -411,13 +378,13 @@ export function PdfViewer({
               </select>
             </label>
           )}
-          {canPersist && exemptionCodes?.length === 0 && (
+          {canPersist && (
             <button
               type="button"
-              className="text-sm text-primary underline-offset-2 hover:underline"
+              className="shrink-0 text-sm text-primary underline-offset-2 hover:underline"
               onClick={() => void seedDefaults({})}
             >
-              Seed exemptions
+              {exemptionCodes?.length === 0 ? 'Load standard reasons' : 'Add missing reasons'}
             </button>
           )}
         </div>
@@ -489,8 +456,8 @@ export function PdfViewer({
                 boxesInteractive={boxesInteractive}
               />
             )}
-            {overlayAligned && toolMode === 'select-text' && (
-              <TextSelectionPreview items={highlightedText} dragRect={textDragRect} />
+            {pageOverlayReady && toolMode === 'select-text' && (
+              <TextSelectionPreview items={highlightedText} />
             )}
             {overlayAligned && draft && (
               <div

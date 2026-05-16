@@ -1,6 +1,7 @@
 import { useConvex, useMutation, useQuery } from 'convex/react'
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -277,6 +278,16 @@ function MainApp({
     [sessionToken, setPreferredUploadGroup],
   )
 
+  useEffect(() => {
+    if (!convexReady || activeGroupId === null || myGroups === undefined) return
+    const stillMember = myGroups.some(({ group }) => group._id === activeGroupId)
+    if (!stillMember) {
+      void setGroupScope(null)
+      setDocumentId(null)
+      setLocalPdfUrl(undefined)
+    }
+  }, [activeGroupId, convexReady, myGroups, setGroupScope])
+
   const onSidebarBulkPdfFiles = async (f: FileList | null, inputReset: () => void) => {
     const list = f ? Array.from(f) : []
     if (!list.length || !convexReady || activeGroupId === null) {
@@ -334,12 +345,12 @@ function MainApp({
   const onDeleteCase = useCallback(
     async (groupIdToDelete: Id<'groups'>) => {
       if (!convexReady) return
-      await deleteGroupMutation({ groupId: groupIdToDelete, userEmail: session.email })
       if (activeGroupId === groupIdToDelete) {
         await setGroupScope(null)
         setDocumentId(null)
         setLocalPdfUrl(undefined)
       }
+      await deleteGroupMutation({ groupId: groupIdToDelete, userEmail: session.email })
     },
     [activeGroupId, convexReady, deleteGroupMutation, session.email, setGroupScope],
   )

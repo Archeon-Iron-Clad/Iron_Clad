@@ -51,7 +51,7 @@ export function RedactionToolbar({
 
   return (
     <div
-      className="flex items-center gap-0.5 rounded-md border border-outline-variant bg-surface p-0.5"
+      className="flex max-w-full shrink-0 flex-wrap items-center gap-0.5 rounded-md border border-outline-variant bg-surface p-0.5 sm:flex-nowrap"
       role="toolbar"
       aria-label="Redaction tools"
     >

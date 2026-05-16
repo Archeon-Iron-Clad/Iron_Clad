@@ -1,4 +1,4 @@
-import { useMutation } from 'convex/react'
+import { useMutation, useQuery } from 'convex/react'
 import { useEffect, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
 import { PresenceBadge } from '../components/presence/PresenceBadge'
@@ -39,6 +39,8 @@ export function SettingsPage({
   const convexReady = isConvexConfigured()
   const revokeSession = useMutation(api.session.revokeSession)
   const setDisplayNameMutation = useMutation(api.session.setDisplayName)
+  const exemptionCodes = useQuery(api.exemptionCodes.list, convexReady ? {} : 'skip')
+  const seedDefaults = useMutation(api.exemptionCodes.seedDefaults)
   const { preference, setPreference, isDark } = useTheme()
 
   const [nameDraft, setNameDraft] = useState(displayName ?? '')
@@ -209,6 +211,47 @@ export function SettingsPage({
               Current look: <span className="font-medium text-on-surface">{isDark ? 'Dark' : 'Light'}</span>
               {preference === 'system' ? ' (from your device)' : ''}
             </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-outline-variant bg-surface-bright p-6 shadow-sm">
+        <div className="flex items-start gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-tertiary-container text-on-tertiary-container">
+            <Icon name="gavel" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold text-on-surface">Redaction reasons</h2>
+            <p className="mt-0.5 text-xs text-on-surface-variant">
+              FOIA exemptions and privilege codes available in the workspace Reason dropdown.
+            </p>
+            {convexReady && (
+              <>
+                <p className="mt-3 text-xs text-on-surface-variant">
+                  {exemptionCodes === undefined
+                    ? 'Loading…'
+                    : `${exemptionCodes.length} active reason${exemptionCodes.length === 1 ? '' : 's'}`}
+                </p>
+                <ul className="mt-3 max-h-48 space-y-1 overflow-y-auto rounded-lg border border-outline-variant bg-background p-2 text-xs">
+                  {exemptionCodes?.length === 0 && (
+                    <li className="text-on-surface-variant">No reasons yet — load the standard set below.</li>
+                  )}
+                  {exemptionCodes?.map((code) => (
+                    <li key={code._id} className="truncate text-on-surface">
+                      <span className="font-semibold">{code.shortCode}</span> — {code.title}
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  disabled={!convexReady}
+                  onClick={() => void seedDefaults({})}
+                  className="mt-4 rounded-lg border border-outline-variant bg-secondary px-4 py-2 text-sm font-semibold text-on-secondary hover:opacity-90 disabled:opacity-50"
+                >
+                  Load standard reasons
+                </button>
+              </>
+            )}
           </div>
         </div>
       </section>

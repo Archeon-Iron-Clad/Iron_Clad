@@ -23,8 +23,8 @@ export function RedactionGuidance() {
           reading only — text under them can still be copied.
         </p>
         <p>
-          <strong className="text-on-surface">Release export</strong> rasterizes each page that has
-          redactions so underlying text is gone (not copy-pasteable). Use Release for production.
+          <strong className="text-on-surface">Release export</strong> flattens only the redacted
+          regions to image patches; the rest of the page stays normal PDF text. Use Release for production.
         </p>
         <p className="text-xs">
           Browser Ctrl+A does not perform secure redaction; use Marquee or Select text tools to mark

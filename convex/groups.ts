@@ -175,6 +175,13 @@ export const deleteGroup = mutation({
       .collect();
 
     for (const doc of docs) {
+      const audits = await ctx.db
+        .query("documentAuditEvents")
+        .withIndex("by_document_time", (q) => q.eq("documentId", doc._id))
+        .collect();
+      for (const ev of audits) {
+        await ctx.db.delete(ev._id);
+      }
       const boxes = await ctx.db
         .query("redactionBoxes")
         .withIndex("by_document", (q) => q.eq("documentId", doc._id))

@@ -1,11 +1,12 @@
 import * as pdfjs from 'pdfjs-dist'
-import { PDFDocument } from 'pdf-lib'
+import { PDFDocument, rgb } from 'pdf-lib'
+import { normalizedToPdfLibRect } from './coordinateMap'
 import { setupPdfWorker } from './setupPdfWorker'
 import type { PageRedactions, RedactionExportBox } from './exportVisualRedactionPreview'
 
 setupPdfWorker()
 
-/** Higher scale = sharper rasterized release pages. */
+/** Higher scale = sharper redaction patch images. */
 const RELEASE_RASTER_SCALE = 2
 const MIN_BOX_PX = 4
 
@@ -20,7 +21,7 @@ function canvasToPngBytes(canvas: HTMLCanvasElement): Promise<Uint8Array> {
     canvas.toBlob(
       (blob) => {
         if (!blob) {
-          reject(new Error('Failed to encode page image'))
+          reject(new Error('Failed to encode redaction patch'))
           return
         }
         void blob.arrayBuffer().then((buf) => resolve(new Uint8Array(buf)))
@@ -31,15 +32,16 @@ function canvasToPngBytes(canvas: HTMLCanvasElement): Promise<Uint8Array> {
   })
 }
 
-/**
- * Rasterize a page to PNG with redaction regions burned into pixels.
- * The resulting page has no text layer — content cannot be copy-pasted out.
- */
-async function rasterizePageWithRedactions(
+async function renderPageToCanvas(
   pdf: pdfjs.PDFDocumentProxy,
   pageIndex: number,
-  boxes: RedactionExportBox[],
-): Promise<{ pngBytes: Uint8Array; widthPts: number; heightPts: number }> {
+): Promise<{
+  canvas: HTMLCanvasElement
+  viewportWidth: number
+  viewportHeight: number
+  widthPts: number
+  heightPts: number
+}> {
   const page = await pdf.getPage(pageIndex + 1)
   const viewport = page.getViewport({ scale: RELEASE_RASTER_SCALE })
   const sizePts = page.getViewport({ scale: 1 })
@@ -53,21 +55,63 @@ async function rasterizePageWithRedactions(
   const task = page.render({ canvasContext: ctx, viewport, canvas })
   await task.promise
 
-  ctx.fillStyle = '#000000'
-  for (const box of boxes) {
-    const left = box.x * viewport.width
-    const top = box.y * viewport.height
-    const w = box.width * viewport.width
-    const h = box.height * viewport.height
-    if (w < MIN_BOX_PX || h < MIN_BOX_PX) continue
-    ctx.fillRect(left, top, w, h)
-  }
-
-  const pngBytes = await canvasToPngBytes(canvas)
   return {
-    pngBytes,
+    canvas,
+    viewportWidth: viewport.width,
+    viewportHeight: viewport.height,
     widthPts: sizePts.width,
     heightPts: sizePts.height,
+  }
+}
+
+/**
+ * Burn each redaction region to a small PNG patch and place it on the page.
+ * The rest of the page stays vector/text from the source PDF.
+ */
+async function applyRedactionPatches(
+  outDoc: PDFDocument,
+  outPage: ReturnType<PDFDocument['addPage']>,
+  sourceCanvas: HTMLCanvasElement,
+  viewportWidth: number,
+  viewportHeight: number,
+  boxes: RedactionExportBox[],
+  pageWidthPts: number,
+  pageHeightPts: number,
+): Promise<void> {
+  for (const box of boxes) {
+    const left = Math.floor(box.x * viewportWidth)
+    const top = Math.floor(box.y * viewportHeight)
+    const w = Math.floor(box.width * viewportWidth)
+    const h = Math.floor(box.height * viewportHeight)
+    if (w < MIN_BOX_PX || h < MIN_BOX_PX) continue
+
+    const crop = document.createElement('canvas')
+    crop.width = w
+    crop.height = h
+    const cropCtx = crop.getContext('2d')
+    if (!cropCtx) continue
+
+    cropCtx.drawImage(sourceCanvas, left, top, w, h, 0, 0, w, h)
+    cropCtx.fillStyle = '#000000'
+    cropCtx.fillRect(0, 0, w, h)
+
+    const pngBytes = await canvasToPngBytes(crop)
+    const image = await outDoc.embedPng(pngBytes)
+    const r = normalizedToPdfLibRect(box, pageWidthPts, pageHeightPts)
+
+    outPage.drawRectangle({
+      x: r.x,
+      y: r.y,
+      width: r.width,
+      height: r.height,
+      color: rgb(0, 0, 0),
+    })
+    outPage.drawImage(image, {
+      x: r.x,
+      y: r.y,
+      width: r.width,
+      height: r.height,
+    })
   }
 }
 
@@ -81,8 +125,8 @@ function stripDocumentMetadata(doc: PDFDocument): void {
 }
 
 /**
- * Release export: pages with redactions are flattened to images (no extractable text
- * under redacted regions). Clean pages are copied from the source. Metadata is cleared.
+ * Release export: only redacted regions are flattened to image patches.
+ * Unredacted page content remains selectable/copyable from the source PDF.
  */
 export async function exportReleaseRedactedPdf(
   originalPdfBytes: ArrayBuffer,
@@ -103,19 +147,20 @@ export async function exportReleaseRedactedPdf(
     for (let pageIndex = 0; pageIndex < pageCount; pageIndex++) {
       const boxes = boxesByPage.get(pageIndex)
       if (boxes && boxes.length > 0) {
-        const { pngBytes, widthPts, heightPts } = await rasterizePageWithRedactions(
-          pdfjsDoc,
-          pageIndex,
+        const { canvas, viewportWidth, viewportHeight, widthPts, heightPts } =
+          await renderPageToCanvas(pdfjsDoc, pageIndex)
+        const [copied] = await outDoc.copyPages(srcDoc, [pageIndex])
+        const outPage = outDoc.addPage(copied)
+        await applyRedactionPatches(
+          outDoc,
+          outPage,
+          canvas,
+          viewportWidth,
+          viewportHeight,
           boxes,
+          widthPts,
+          heightPts,
         )
-        const image = await outDoc.embedPng(pngBytes)
-        const page = outDoc.addPage([widthPts, heightPts])
-        page.drawImage(image, {
-          x: 0,
-          y: 0,
-          width: widthPts,
-          height: heightPts,
-        })
       } else {
         const [copied] = await outDoc.copyPages(srcDoc, [pageIndex])
         outDoc.addPage(copied)
