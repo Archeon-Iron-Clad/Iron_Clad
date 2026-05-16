@@ -43,6 +43,34 @@ Real-time collaborative **visual** PDF redaction for a 24-hour buildathon: PDF.j
 
 Convex server functions use `mutationGeneric` / `queryGeneric` from `convex/server` so the repo builds **before** `convex/_generated` exists; after `convex dev` runs, you can switch to generated `api` for richer types if you want.
 
+## Vercel auto-deploy (frontend only)
+
+No GitHub Actions or Convex CI. **Vercel** rebuilds on every push to the connected branch (including a README-only commit).
+
+### One-time Vercel setup
+
+1. [Vercel](https://vercel.com) → **Add New Project** → import `Archeon-Iron-Clad/Iron_Clad`.
+2. Framework: **Vite** (auto-detected). Build: `npm run build`. Output: `dist`.
+3. **Environment variables** (Production, and Preview if you want):
+
+   | Name | Value |
+   |------|--------|
+   | `VITE_CONVEX_URL` | `https://grateful-butterfly-7.convex.cloud` |
+
+   Use your prod URL from `npx convex deploy --dry-run` if it differs.
+
+4. Deploy once. After that, **any push to `main`** (README, code, etc.) triggers a new Vercel deployment automatically.
+
+### Convex backend (manual, when you change `convex/`)
+
+Run locally when you change schema or server functions — not on every git push:
+
+```bash
+npx convex deploy
+```
+
+Local dev still uses `npx convex dev` and `.env.local` (dev deployment). Vercel only hosts the static frontend; it must point at **prod** Convex via `VITE_CONVEX_URL`.
+
 ## Team git workflow
 
 Use short-lived branches and one shared Convex dev deployment; avoid committing `.env.local`.
