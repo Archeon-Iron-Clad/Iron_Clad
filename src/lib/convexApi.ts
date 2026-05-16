@@ -8,6 +8,8 @@ export const api = {
     listAccessible: makeFunctionReference<'query'>('documents:listAccessible'),
     generateUploadUrl: makeFunctionReference<'mutation'>('documents:generateUploadUrl'),
     getFileUrl: makeFunctionReference<'query'>('documents:getFileUrl'),
+    rename: makeFunctionReference<'mutation'>('documents:rename'),
+    removeDocument: makeFunctionReference<'mutation'>('documents:removeDocument'),
   },
   groups: {
     create: makeFunctionReference<'mutation'>('groups:create'),
@@ -28,6 +30,9 @@ export const api = {
     createBox: makeFunctionReference<'mutation'>('redactions:createBox'),
     updateBox: makeFunctionReference<'mutation'>('redactions:updateBox'),
     deleteBox: makeFunctionReference<'mutation'>('redactions:deleteBox'),
+  },
+  exportRedaction: {
+    requestReleaseExport: makeFunctionReference<'action'>('exportRedaction:requestReleaseExport'),
   },
   presence: {
     heartbeat: makeFunctionReference<'mutation'>('presence:heartbeat'),

@@ -16,18 +16,19 @@ type Props = {
   documents?: DocumentRow[]
   activeDocumentId: Id<'documents'> | null
   onSelectDocument: (id: Id<'documents'>) => void
+  onRenameDocument?: (id: Id<'documents'>, name: string) => void
+  onDeleteDocument?: (id: Id<'documents'>) => void
   onAddDocument: () => void
   uploading?: boolean
   draftCount?: number
   workspaceTitle: string
   workspaceSubtitle?: string
   badgeLabel: string
-  onExportClick?: () => void
-  /** Top-bar settings control opens this route area. */
+  onExportPreview?: () => void
+  onExportRelease?: () => void
+  exportDisabled?: boolean
   onTopBarSettingsClick?: () => void
-  /** Two-letter initials for the session user (shown in header). */
   userInitials: string
-  /** Optional notices above routed page content (e.g. upload failures). */
   mainNotice?: ReactNode
 }
 
@@ -39,13 +40,17 @@ export function AppShell({
   documents,
   activeDocumentId,
   onSelectDocument,
+  onRenameDocument,
+  onDeleteDocument,
   onAddDocument,
   uploading,
   draftCount,
   workspaceTitle,
   workspaceSubtitle,
   badgeLabel,
-  onExportClick,
+  onExportPreview,
+  onExportRelease,
+  exportDisabled,
   onTopBarSettingsClick,
   userInitials,
   mainNotice,
@@ -61,7 +66,9 @@ export function AppShell({
       <TopAppBar
         activeNav={activeTopNav}
         onNavClick={handleTopNav}
-        onExportClick={onExportClick}
+        onExportPreview={onExportPreview}
+        onExportRelease={onExportRelease}
+        exportDisabled={exportDisabled}
         onSettingsClick={onTopBarSettingsClick}
         userInitials={userInitials}
       />
@@ -71,6 +78,8 @@ export function AppShell({
         documents={documents}
         activeDocumentId={activeDocumentId}
         onSelectDocument={onSelectDocument}
+        onRenameDocument={onRenameDocument}
+        onDeleteDocument={onDeleteDocument}
         onAddDocument={onAddDocument}
         uploading={uploading}
         draftCount={draftCount}

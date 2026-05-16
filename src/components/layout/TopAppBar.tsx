@@ -1,10 +1,13 @@
 import type { TopNavId } from '../../navigation/routes'
+import { ExportCaseMenu } from './ExportCaseMenu'
 import { Icon } from '../ui/Icon'
 
 type Props = {
   activeNav: TopNavId | null
   onNavClick: (nav: TopNavId) => void
-  onExportClick?: () => void
+  onExportPreview?: () => void
+  onExportRelease?: () => void
+  exportDisabled?: boolean
   onSettingsClick?: () => void
   userInitials: string
 }
@@ -19,7 +22,9 @@ const TOP_LINKS: { id: TopNavId; label: string }[] = [
 export function TopAppBar({
   activeNav,
   onNavClick,
-  onExportClick,
+  onExportPreview,
+  onExportRelease,
+  exportDisabled,
   onSettingsClick,
   userInitials,
 }: Props) {
@@ -43,18 +48,18 @@ export function TopAppBar({
         </nav>
       </div>
       <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onExportClick}
-          className="rounded border border-primary bg-primary px-4 py-1.5 text-xs font-semibold text-on-primary transition-all hover:opacity-90 active:scale-95"
-        >
-          Export PDF
-        </button>
+        {onExportPreview && onExportRelease ? (
+          <ExportCaseMenu
+            disabled={exportDisabled}
+            onPreviewExport={onExportPreview}
+            onReleaseExport={onExportRelease}
+          />
+        ) : null}
         {onSettingsClick ? (
           <button
             type="button"
             onClick={onSettingsClick}
-            className="rounded-full p-2 text-on-surface-variant hover:bg-surface-container-low"
+            className="rounded-full p-2 text-on-surface-variant hover:bg-surface-container-high"
             aria-label="Open settings"
           >
             <Icon name="settings" />

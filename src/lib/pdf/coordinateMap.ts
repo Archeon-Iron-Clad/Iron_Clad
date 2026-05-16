@@ -1,22 +1,38 @@
 /**
- * Coordinate convention: redaction rectangles are stored as fractions of the **rendered page**
- * width and height (top-left origin), each in [0, 1].
+ * Coordinate convention: redaction rectangles are stored as fractions of the
+ * **PDF.js page viewport** at review time (top-left origin, each in [0, 1]).
+ * The viewport width/height match the rendered canvas intrinsic dimensions
+ * for that page and scale — see `pageViewport.ts`.
  *
- * When burning with pdf-lib, convert to PDF points using the page's media box size.
+ * When burning with pdf-lib, convert to PDF points using the page media box.
  */
 
 export type NormalizedRect = { x: number; y: number; width: number; height: number }
 
+/** @deprecated Prefer viewportPixelsToNormalized from pageViewport.ts */
 export function pixelsToNormalized(
   rectPx: { left: number; top: number; width: number; height: number },
-  canvasWidth: number,
-  canvasHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
 ): NormalizedRect {
   return {
-    x: rectPx.left / canvasWidth,
-    y: rectPx.top / canvasHeight,
-    width: rectPx.width / canvasWidth,
-    height: rectPx.height / canvasHeight,
+    x: rectPx.left / viewportWidth,
+    y: rectPx.top / viewportHeight,
+    width: rectPx.width / viewportWidth,
+    height: rectPx.height / viewportHeight,
+  }
+}
+
+export function normalizedToPixels(
+  n: NormalizedRect,
+  viewportWidth: number,
+  viewportHeight: number,
+): { left: number; top: number; width: number; height: number } {
+  return {
+    left: n.x * viewportWidth,
+    top: n.y * viewportHeight,
+    width: n.width * viewportWidth,
+    height: n.height * viewportHeight,
   }
 }
 

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { Id } from '../../../convex/_generated/dataModel'
 import type { SideNavId } from '../../navigation/routes'
 import { useTheme } from '../../lib/theme'
@@ -15,6 +16,8 @@ type Props = {
   documents?: DocumentRow[]
   activeDocumentId: Id<'documents'> | null
   onSelectDocument: (id: Id<'documents'>) => void
+  onRenameDocument?: (id: Id<'documents'>, name: string) => void
+  onDeleteDocument?: (id: Id<'documents'>) => void
   onAddDocument: () => void
   uploading?: boolean
   draftCount?: number
@@ -54,6 +57,8 @@ export function LeftSidebar({
   documents,
   activeDocumentId,
   onSelectDocument,
+  onRenameDocument,
+  onDeleteDocument,
   onAddDocument,
   uploading,
   draftCount = 0,
@@ -61,6 +66,21 @@ export function LeftSidebar({
   workspaceSubtitle = 'Workspace',
   badgeLabel,
 }: Props) {
+  const [renamingId, setRenamingId] = useState<Id<'documents'> | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+
+  const startRename = (doc: DocumentRow) => {
+    setRenamingId(doc._id)
+    setRenameValue(doc.name)
+  }
+
+  const commitRename = (id: Id<'documents'>) => {
+    const trimmed = renameValue.trim()
+    if (trimmed && onRenameDocument) onRenameDocument(id, trimmed)
+    setRenamingId(null)
+    setRenameValue('')
+  }
+
   return (
     <aside className="fixed left-0 top-14 z-40 flex h-[calc(100vh-3.5rem)] w-64 flex-col overflow-y-auto border-r border-outline-variant bg-surface-bright">
       <div className="border-b border-outline-variant p-4">
@@ -111,21 +131,78 @@ export function LeftSidebar({
 
         {documents && documents.length > 0 && (
           <div className="mt-4 border-t border-outline-variant px-3 pt-3">
-            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">Case files</p>
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+              Case files
+            </p>
             <ul className="space-y-1">
               {documents.map((doc) => (
                 <li key={doc._id}>
-                  <button
-                    type="button"
-                    onClick={() => onSelectDocument(doc._id)}
-                    className={`w-full truncate rounded px-2 py-1.5 text-left text-xs transition-colors ${
-                      activeDocumentId === doc._id
-                        ? 'bg-secondary-container font-semibold text-on-secondary-container'
-                        : 'text-on-surface-variant hover:bg-surface-container-high'
-                    }`}
-                  >
-                    {doc.name}
-                  </button>
+                  {renamingId === doc._id ? (
+                    <input
+                      type="text"
+                      autoFocus
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={() => commitRename(doc._id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitRename(doc._id)
+                        if (e.key === 'Escape') {
+                          setRenamingId(null)
+                          setRenameValue('')
+                        }
+                      }}
+                      className="w-full rounded border border-outline-variant bg-surface px-2 py-1 text-xs"
+                    />
+                  ) : (
+                    <div
+                      className={`group flex items-center gap-1 rounded px-1 py-0.5 ${
+                        activeDocumentId === doc._id ? 'bg-secondary-container' : 'hover:bg-surface-container-high'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onSelectDocument(doc._id)}
+                        className={`min-w-0 flex-1 truncate py-1 text-left text-xs ${
+                          activeDocumentId === doc._id
+                            ? 'font-semibold text-on-secondary-container'
+                            : 'text-on-surface-variant'
+                        }`}
+                        title={doc.name}
+                      >
+                        {doc.name}
+                      </button>
+                      {onRenameDocument && (
+                        <button
+                          type="button"
+                          title="Rename document"
+                          aria-label={`Rename ${doc.name}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            startRename(doc)
+                          }}
+                          className="rounded p-1 text-on-surface-variant opacity-0 transition-opacity hover:bg-surface-container-high group-hover:opacity-100"
+                        >
+                          <Icon name="edit" size={16} />
+                        </button>
+                      )}
+                      {onDeleteDocument && (
+                        <button
+                          type="button"
+                          title="Delete document"
+                          aria-label={`Delete ${doc.name}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (window.confirm(`Delete "${doc.name}"? This cannot be undone.`)) {
+                              onDeleteDocument(doc._id)
+                            }
+                          }}
+                          className="rounded p-1 text-error opacity-0 transition-opacity hover:bg-error-container group-hover:opacity-100"
+                        >
+                          <Icon name="delete" size={16} />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>

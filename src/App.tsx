@@ -11,7 +11,8 @@ import { clearStoredSessionToken, getStoredSessionToken } from './lib/sessionTok
 import { isConvexConfigured } from './lib/convexClient'
 import { useDocumentUpload } from './lib/hooks/useDocumentUpload'
 import { usePresenceHeartbeat } from './lib/hooks/usePresenceHeartbeat'
-import { exportRedactedPdf } from './lib/pdf/exportRedactedPdf'
+import { exportVisualRedactionPreview } from './lib/pdf/exportVisualRedactionPreview'
+import { exportReleaseRedactedPdf } from './lib/pdf/exportReleasePdf'
 import type { AppRoute } from './navigation/routes'
 import { AnnotationsPage } from './pages/AnnotationsPage'
 import { BatchPage } from './pages/BatchPage'
@@ -21,6 +22,9 @@ import { SettingsPage } from './pages/SettingsPage'
 import { TeamsPage } from './pages/TeamsPage'
 import { WorkspacePage } from './pages/WorkspacePage'
 import { toRedactionExportBox } from './types/redaction'
+
+const DEMO_PDF =
+  'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf'
 
 function initialsFromEmail(email: string): string {
   const local = (email.split('@')[0] ?? email).replace(/[^a-zA-Z0-9]/g, '')
@@ -110,6 +114,8 @@ function MainApp({
   const createBox = useMutation(api.redactions.createBox)
   const updateBox = useMutation(api.redactions.updateBox)
   const deleteBox = useMutation(api.redactions.deleteBox)
+  const renameDocument = useMutation(api.documents.rename)
+  const removeDocument = useMutation(api.documents.removeDocument)
 
   const { uploadPdf, uploading, error: uploadError } = useDocumentUpload(
     sessionToken,
@@ -129,6 +135,7 @@ function MainApp({
         height: b.height,
         status: b.status,
         userId: b.userId,
+        exemptionCodeId: b.exemptionCodeId,
         exemptionShortCodeSnapshot: b.exemptionShortCodeSnapshot,
         exemptionTitleSnapshot: b.exemptionTitleSnapshot,
       })),
@@ -198,6 +205,26 @@ function MainApp({
 
   const sidebarBadgeLabel = String(accessibleDocs?.length ?? 0)
 
+  const onRenameDocument = useCallback(
+    async (id: Id<'documents'>, name: string) => {
+      if (!convexReady) return
+      await renameDocument({ documentId: id, sessionToken, name })
+    },
+    [convexReady, renameDocument, sessionToken],
+  )
+
+  const onDeleteDocument = useCallback(
+    async (id: Id<'documents'>) => {
+      if (!convexReady) return
+      await removeDocument({ documentId: id, sessionToken })
+      if (documentId === id) {
+        setDocumentId(null)
+        setLocalPdfUrl(undefined)
+      }
+    },
+    [convexReady, documentId, removeDocument, sessionToken],
+  )
+
   const onCreateGroup = async (e: React.FormEvent) => {
     e.preventDefault()
     const name = newGroupName.trim()
@@ -257,31 +284,91 @@ function MainApp({
     [deleteBox, sessionToken],
   )
 
-  const onExport = async () => {
+  const onMoveBox = useCallback(
+    async (boxId: string, rect: { x: number; y: number; width: number; height: number }) => {
+      if (!convexReady) return
+      await updateBox({
+        boxId: boxId as Id<'redactionBoxes'>,
+        sessionToken,
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+      })
+    },
+    [convexReady, updateBox, sessionToken],
+  )
+
+  const onUpdateExemption = useCallback(
+    async (boxId: string, exemptionCodeId: string | null) => {
+      if (!convexReady) return
+      if (exemptionCodeId === null) {
+        await updateBox({
+          boxId: boxId as Id<'redactionBoxes'>,
+          sessionToken,
+          clearExemption: true,
+        })
+      } else {
+        await updateBox({
+          boxId: boxId as Id<'redactionBoxes'>,
+          sessionToken,
+          exemptionCodeId: exemptionCodeId as Id<'exemptionCodes'>,
+        })
+      }
+    },
+    [convexReady, updateBox, sessionToken],
+  )
+
+  const buildExportPages = useCallback(() => {
+    const byPage = new Map<number, ReturnType<typeof toRedactionExportBox>[]>()
+    for (const box of overlayBoxes) {
+      const list = byPage.get(box.pageNumber ?? 1) ?? []
+      list.push(toRedactionExportBox(box))
+      byPage.set(box.pageNumber ?? 1, list)
+    }
+    return [...byPage.entries()].map(([pageNumber, boxes]) => ({
+      pageIndex: pageNumber - 1,
+      boxes,
+    }))
+  }, [overlayBoxes])
+
+  const onExportPreview = useCallback(async () => {
     if (!pdfUrl) return
     try {
       const bytes = await fetch(pdfUrl).then((r) => r.arrayBuffer())
-      const byPage = new Map<number, ReturnType<typeof toRedactionExportBox>[]>()
-      for (const box of overlayBoxes) {
-        const list = byPage.get(box.pageNumber ?? 1) ?? []
-        list.push(toRedactionExportBox(box))
-        byPage.set(box.pageNumber ?? 1, list)
-      }
-      const pages = [...byPage.entries()].map(([pageNumber, boxes]) => ({
-        pageIndex: pageNumber - 1,
-        boxes,
-      }))
-      const out = await exportRedactedPdf(bytes, pages)
+      const out = await exportVisualRedactionPreview(bytes, buildExportPages())
       const blob = new Blob([Uint8Array.from(out)], { type: 'application/pdf' })
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
-      a.download = selectedDoc?.name ? `redacted-${selectedDoc.name}` : 'redacted.pdf'
+      a.download = selectedDoc?.name ? `preview-${selectedDoc.name}` : 'preview-redacted.pdf'
       a.click()
       URL.revokeObjectURL(a.href)
     } catch (e) {
-      console.error('Export failed', e)
+      console.error('Preview export failed', e)
     }
-  }
+  }, [buildExportPages, pdfUrl, selectedDoc?.name])
+
+  const onExportRelease = useCallback(async () => {
+    if (!pdfUrl) return
+    const pages = buildExportPages()
+    if (pages.every((p) => p.boxes.length === 0)) {
+      window.alert('Add at least one redaction box before using Release export.')
+      return
+    }
+    try {
+      const bytes = await fetch(pdfUrl).then((r) => r.arrayBuffer())
+      const out = await exportReleaseRedactedPdf(bytes, pages)
+      const blob = new Blob([Uint8Array.from(out)], { type: 'application/pdf' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = selectedDoc?.name ? `release-${selectedDoc.name}` : 'release-redacted.pdf'
+      a.click()
+      URL.revokeObjectURL(a.href)
+    } catch (e) {
+      console.error('Release export failed', e)
+      window.alert(e instanceof Error ? e.message : 'Release export failed.')
+    }
+  }, [buildExportPages, pdfUrl, selectedDoc?.name])
 
   const uploadFailureNotice =
     uploadError !== null ? (
@@ -360,6 +447,22 @@ function MainApp({
             pdfUrl={pdfUrl}
             boxes={overlayBoxes}
             onCreateBox={convexReady && documentId ? onCreateBox : undefined}
+            onUpdateExemption={convexReady && documentId ? onUpdateExemption : undefined}
+            onMoveBox={convexReady && documentId ? onMoveBox : undefined}
+            onDeleteBox={convexReady && documentId ? onDeleteBox : undefined}
+            canPersist={Boolean(convexReady && documentId)}
+            emptyAction={
+              <button
+                type="button"
+                className="rounded bg-secondary px-4 py-2 text-sm font-semibold text-on-secondary"
+                onClick={() => {
+                  setLocalPdfUrl(DEMO_PDF)
+                  setDocumentId(null)
+                }}
+              >
+                Load sample PDF
+              </button>
+            }
           />
         )
       case 'dashboard':
@@ -420,6 +523,9 @@ function MainApp({
     convexReady,
     documentId,
     onCreateBox,
+    onUpdateExemption,
+    onMoveBox,
+    onDeleteBox,
     activeGroupId,
     myGroups,
     membersForActiveGroup,
@@ -433,6 +539,7 @@ function MainApp({
     onAddMember,
     removeMember,
     setGroupScope,
+    accessibleDocs,
   ])
 
   return (
@@ -443,13 +550,17 @@ function MainApp({
       documents={accessibleDocs}
       activeDocumentId={documentId}
       onSelectDocument={selectConvexDoc}
+      onRenameDocument={convexReady ? onRenameDocument : undefined}
+      onDeleteDocument={convexReady ? onDeleteDocument : undefined}
       onAddDocument={onAddDocument}
       uploading={uploading}
       draftCount={draftCount}
       workspaceTitle={workspaceTitle}
       workspaceSubtitle={userEmail.split('@')[0] ?? userEmail}
       badgeLabel={sidebarBadgeLabel}
-      onExportClick={onExport}
+      onExportPreview={pdfUrl ? onExportPreview : undefined}
+      onExportRelease={pdfUrl ? onExportRelease : undefined}
+      exportDisabled={!pdfUrl}
       onTopBarSettingsClick={() => setRoute('settings')}
       userInitials={initialsFromEmail(userEmail)}
       mainNotice={uploadFailureNotice}

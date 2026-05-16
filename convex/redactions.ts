@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { resolveExemptionForBox } from "./exemptionCodes";
 import { mutation, query } from "./_generated/server";
 import { requireDocumentAccess } from "./lib/access";
+import { logDocumentAudit } from "./lib/auditLog";
 import { requireUserEmail } from "./lib/sessionHelpers";
 
 export const listByDocument = query({
@@ -38,7 +39,7 @@ export const createBox = mutation({
       ? await resolveExemptionForBox(ctx, args.exemptionCodeId)
       : {};
 
-    return await ctx.db.insert("redactionBoxes", {
+    const boxId = await ctx.db.insert("redactionBoxes", {
       documentId: args.documentId,
       pageNumber: args.pageNumber,
       x: args.x,
@@ -50,6 +51,17 @@ export const createBox = mutation({
       updatedAt: now,
       ...exemption,
     });
+
+    await logDocumentAudit(ctx, {
+      documentId: args.documentId,
+      userId,
+      action: "box_created",
+      pageNumber: args.pageNumber,
+      boxId,
+      summary: `Added redaction on page ${args.pageNumber}`,
+    });
+
+    return boxId;
   },
 });
 
@@ -79,6 +91,12 @@ export const updateBox = mutation({
     }
 
     const updates: Record<string, unknown> = { updatedAt: Date.now() };
+    const moved =
+      patch.x !== undefined ||
+      patch.y !== undefined ||
+      patch.width !== undefined ||
+      patch.height !== undefined;
+
     if (patch.x !== undefined) updates.x = patch.x;
     if (patch.y !== undefined) updates.y = patch.y;
     if (patch.width !== undefined) updates.width = patch.width;
@@ -95,6 +113,50 @@ export const updateBox = mutation({
     }
 
     await ctx.db.patch(boxId, updates);
+
+    if (moved) {
+      await logDocumentAudit(ctx, {
+        documentId: box.documentId,
+        userId,
+        action: "box_moved",
+        pageNumber: box.pageNumber,
+        boxId,
+        summary: `Moved redaction on page ${box.pageNumber}`,
+      });
+    }
+
+    if (patch.status === "locked") {
+      await logDocumentAudit(ctx, {
+        documentId: box.documentId,
+        userId,
+        action: "box_locked",
+        pageNumber: box.pageNumber,
+        boxId,
+        summary: `Locked redaction on page ${box.pageNumber}`,
+      });
+    }
+
+    if (clearExemption) {
+      await logDocumentAudit(ctx, {
+        documentId: box.documentId,
+        userId,
+        action: "box_exemption_cleared",
+        pageNumber: box.pageNumber,
+        boxId,
+        summary: `Cleared exemption on page ${box.pageNumber}`,
+      });
+    } else if (exemptionCodeId !== undefined) {
+      const code = await ctx.db.get(exemptionCodeId);
+      const label = code?.shortCode ?? "exemption";
+      await logDocumentAudit(ctx, {
+        documentId: box.documentId,
+        userId,
+        action: "box_exemption_set",
+        pageNumber: box.pageNumber,
+        boxId,
+        summary: `Applied exemption ${label} on page ${box.pageNumber}`,
+      });
+    }
   },
 });
 
@@ -108,6 +170,15 @@ export const deleteBox = mutation({
     if (box.userId !== userId) {
       throw new Error("Forbidden");
     }
+    await logDocumentAudit(ctx, {
+      documentId: box.documentId,
+      userId,
+      action: "box_deleted",
+      pageNumber: box.pageNumber,
+      boxId,
+      summary: `Deleted redaction on page ${box.pageNumber}`,
+    });
+
     await ctx.db.delete(boxId);
   },
 });

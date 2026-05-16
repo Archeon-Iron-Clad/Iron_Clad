@@ -9,13 +9,16 @@
  */
 
 import type * as activity from "../activity.js";
+import type * as audit from "../audit.js";
 import type * as dashboard from "../dashboard.js";
 import type * as documents from "../documents.js";
 import type * as exemptionCodes from "../exemptionCodes.js";
+import type * as exportRedaction from "../exportRedaction.js";
 import type * as groups from "../groups.js";
 import type * as http from "../http.js";
 import type * as lib_access from "../lib/access.js";
 import type * as lib_accessibleDocuments from "../lib/accessibleDocuments.js";
+import type * as lib_auditLog from "../lib/auditLog.js";
 import type * as lib_sessionHelpers from "../lib/sessionHelpers.js";
 import type * as presence from "../presence.js";
 import type * as redactions from "../redactions.js";
@@ -29,13 +32,16 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   activity: typeof activity;
+  audit: typeof audit;
   dashboard: typeof dashboard;
   documents: typeof documents;
   exemptionCodes: typeof exemptionCodes;
+  exportRedaction: typeof exportRedaction;
   groups: typeof groups;
   http: typeof http;
   "lib/access": typeof lib_access;
   "lib/accessibleDocuments": typeof lib_accessibleDocuments;
+  "lib/auditLog": typeof lib_auditLog;
   "lib/sessionHelpers": typeof lib_sessionHelpers;
   presence: typeof presence;
   redactions: typeof redactions;

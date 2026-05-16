@@ -63,6 +63,28 @@ export default defineSchema({
     .index("by_document_page", ["documentId", "pageNumber"])
     .index("by_user_document", ["userId", "documentId"]),
 
+  documentAuditEvents: defineTable({
+    documentId: v.id("documents"),
+    /** Self-declared user email (no verification). */
+    userId: v.string(),
+    action: v.union(
+      v.literal("document_uploaded"),
+      v.literal("document_renamed"),
+      v.literal("document_deleted"),
+      v.literal("box_created"),
+      v.literal("box_moved"),
+      v.literal("box_exemption_set"),
+      v.literal("box_exemption_cleared"),
+      v.literal("box_locked"),
+      v.literal("box_deleted"),
+    ),
+    createdAt: v.number(),
+    pageNumber: v.optional(v.number()),
+    boxId: v.optional(v.id("redactionBoxes")),
+    /** Human-readable summary for the audit UI. */
+    summary: v.string(),
+  }).index("by_document_time", ["documentId", "createdAt"]),
+
   presencePeers: defineTable({
     /** Self-declared user email (no verification). */
     userId: v.string(),

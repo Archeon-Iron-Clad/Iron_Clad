@@ -18,6 +18,7 @@ export function usePdfDocument(url: string | undefined) {
     }
 
     let cancelled = false
+    let loaded: PDFDocumentProxy | null = null
 
     queueMicrotask(() => {
       if (!cancelled) {
@@ -28,7 +29,11 @@ export function usePdfDocument(url: string | undefined) {
 
     loadPdfFromUrl(url)
       .then((doc) => {
-        if (cancelled) return
+        if (cancelled) {
+          void doc.destroy()
+          return
+        }
+        loaded = doc
         setPdf(doc)
         setLoading(false)
       })
@@ -41,6 +46,7 @@ export function usePdfDocument(url: string | undefined) {
 
     return () => {
       cancelled = true
+      void loaded?.destroy()
     }
   }, [url])
 
