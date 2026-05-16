@@ -1,0 +1,8 @@
+import { ConvexProvider } from 'convex/react'
+import type { ReactNode } from 'react'
+
+import { convexClient } from './convexClient'
+
+export function ConvexClientProvider({ children }: { children: ReactNode }) {
+  return <ConvexProvider client={convexClient}>{children}</ConvexProvider>
+}
