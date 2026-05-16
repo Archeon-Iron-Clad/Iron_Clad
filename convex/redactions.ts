@@ -1,13 +1,13 @@
 import { v } from "convex/values";
 import { resolveExemptionForBox } from "./exemptionCodes";
 import { mutation, query } from "./_generated/server";
-import { normalizeEmail, requireDocumentAccess } from "./lib/access";
+import { requireDocumentAccess } from "./lib/access";
+import { requireUserEmail } from "./lib/sessionHelpers";
 
 export const listByDocument = query({
-  args: { documentId: v.id("documents"), userEmail: v.string() },
-  handler: async (ctx, { documentId, userEmail }) => {
-    const u = normalizeEmail(userEmail);
-    if (!u.includes("@")) throw new Error("Invalid email");
+  args: { documentId: v.id("documents"), sessionToken: v.string() },
+  handler: async (ctx, { documentId, sessionToken }) => {
+    const u = await requireUserEmail(ctx, sessionToken);
     await requireDocumentAccess(ctx, u, documentId);
     return await ctx.db
       .query("redactionBoxes")
@@ -25,14 +25,12 @@ export const createBox = mutation({
     width: v.number(),
     height: v.number(),
     status: v.union(v.literal("draft"), v.literal("locked")),
-    userEmail: v.string(),
+    sessionToken: v.string(),
     exemptionCodeId: v.optional(v.id("exemptionCodes")),
   },
   handler: async (ctx, args) => {
-    const userId = normalizeEmail(args.userEmail);
-    if (!userId.includes("@")) {
-      throw new Error("Invalid email");
-    }
+    const userId = await requireUserEmail(ctx, args.sessionToken);
+
     await requireDocumentAccess(ctx, userId, args.documentId);
 
     const now = Date.now();
@@ -58,7 +56,7 @@ export const createBox = mutation({
 export const updateBox = mutation({
   args: {
     boxId: v.id("redactionBoxes"),
-    userEmail: v.string(),
+    sessionToken: v.string(),
     x: v.optional(v.number()),
     y: v.optional(v.number()),
     width: v.optional(v.number()),
@@ -67,12 +65,12 @@ export const updateBox = mutation({
     exemptionCodeId: v.optional(v.id("exemptionCodes")),
     clearExemption: v.optional(v.literal(true)),
   },
-  handler: async (ctx, { boxId, userEmail, exemptionCodeId, clearExemption, ...patch }) => {
+  handler: async (ctx, { boxId, sessionToken, exemptionCodeId, clearExemption, ...patch }) => {
     if (clearExemption && exemptionCodeId !== undefined) {
       throw new Error("Cannot set exemptionCodeId and clearExemption together");
     }
 
-    const userId = normalizeEmail(userEmail);
+    const userId = await requireUserEmail(ctx, sessionToken);
     const box = await ctx.db.get(boxId);
     if (!box) throw new Error("Not found");
     await requireDocumentAccess(ctx, userId, box.documentId);
@@ -101,9 +99,9 @@ export const updateBox = mutation({
 });
 
 export const deleteBox = mutation({
-  args: { boxId: v.id("redactionBoxes"), userEmail: v.string() },
-  handler: async (ctx, { boxId, userEmail }) => {
-    const userId = normalizeEmail(userEmail);
+  args: { boxId: v.id("redactionBoxes"), sessionToken: v.string() },
+  handler: async (ctx, { boxId, sessionToken }) => {
+    const userId = await requireUserEmail(ctx, sessionToken);
     const box = await ctx.db.get(boxId);
     if (!box) throw new Error("Not found");
     await requireDocumentAccess(ctx, userId, box.documentId);

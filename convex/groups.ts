@@ -3,6 +3,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { mutation, query } from "./_generated/server";
 import { normalizeEmail } from "./lib/access";
+import { requireUserEmail } from "./lib/sessionHelpers";
 
 type Ctx = QueryCtx | MutationCtx;
 
@@ -18,10 +19,9 @@ async function requireAdmin(ctx: Ctx, groupId: Id<"groups">, userEmail: string) 
 }
 
 export const create = mutation({
-  args: { name: v.string(), userEmail: v.string() },
+  args: { name: v.string(), sessionToken: v.string() },
   handler: async (ctx, args) => {
-    const userEmail = normalizeEmail(args.userEmail);
-    if (!userEmail.includes("@")) throw new Error("Invalid email");
+    const userEmail = await requireUserEmail(ctx, args.sessionToken);
     const name = args.name.trim();
     if (!name) throw new Error("Name required");
     const now = Date.now();
@@ -41,10 +41,9 @@ export const create = mutation({
 });
 
 export const listMyGroups = query({
-  args: { userEmail: v.string() },
-  handler: async (ctx, { userEmail }) => {
-    const u = normalizeEmail(userEmail);
-    if (!u.includes("@")) return [];
+  args: { sessionToken: v.string() },
+  handler: async (ctx, { sessionToken }) => {
+    const u = await requireUserEmail(ctx, sessionToken);
 
     const rows = await ctx.db
       .query("groupMembers")
@@ -65,10 +64,9 @@ export const listMyGroups = query({
 });
 
 export const listMembers = query({
-  args: { groupId: v.id("groups"), userEmail: v.string() },
-  handler: async (ctx, { groupId, userEmail }) => {
-    const u = normalizeEmail(userEmail);
-    if (!u.includes("@")) throw new Error("Invalid email");
+  args: { groupId: v.id("groups"), sessionToken: v.string() },
+  handler: async (ctx, { groupId, sessionToken }) => {
+    const u = await requireUserEmail(ctx, sessionToken);
 
     const myMembership = await ctx.db
       .query("groupMembers")
@@ -87,12 +85,12 @@ export const addMember = mutation({
   args: {
     groupId: v.id("groups"),
     targetEmail: v.string(),
-    userEmail: v.string(),
+    sessionToken: v.string(),
   },
-  handler: async (ctx, { groupId, targetEmail, userEmail }) => {
-    const adminEmail = normalizeEmail(userEmail);
+  handler: async (ctx, { groupId, targetEmail, sessionToken }) => {
+    const adminEmail = await requireUserEmail(ctx, sessionToken);
     const target = normalizeEmail(targetEmail);
-    if (!adminEmail.includes("@") || !target.includes("@")) {
+    if (!target.includes("@")) {
       throw new Error("Invalid email");
     }
     await requireAdmin(ctx, groupId, adminEmail);
@@ -116,12 +114,12 @@ export const removeMember = mutation({
   args: {
     groupId: v.id("groups"),
     targetEmail: v.string(),
-    userEmail: v.string(),
+    sessionToken: v.string(),
   },
-  handler: async (ctx, { groupId, targetEmail, userEmail }) => {
-    const actor = normalizeEmail(userEmail);
+  handler: async (ctx, { groupId, targetEmail, sessionToken }) => {
+    const actor = await requireUserEmail(ctx, sessionToken);
     const target = normalizeEmail(targetEmail);
-    if (!actor.includes("@") || !target.includes("@")) {
+    if (!target.includes("@")) {
       throw new Error("Invalid email");
     }
 

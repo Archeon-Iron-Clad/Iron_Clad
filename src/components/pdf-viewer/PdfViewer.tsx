@@ -12,12 +12,11 @@ type Props = {
   pdfUrl: string | undefined
   boxes?: OverlayBox[]
   onCreateBox?: (pageNumber: number, rect: { x: number; y: number; width: number; height: number }) => void
-  emptyAction?: React.ReactNode
 }
 
 const MIN_BOX_PX = 8
 
-export function PdfViewer({ pdfUrl, boxes = [], onCreateBox, emptyAction }: Props) {
+export function PdfViewer({ pdfUrl, boxes = [], onCreateBox }: Props) {
   const { pdf, error, loading } = usePdfDocument(pdfUrl)
   const [page, setPage] = useState(1)
   const [scale, setScale] = useState(1.25)
@@ -90,9 +89,8 @@ export function PdfViewer({ pdfUrl, boxes = [], onCreateBox, emptyAction }: Prop
         <div className="flex flex-1 flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-outline-variant bg-surface p-12 text-center">
           <Icon name="picture_as_pdf" className="text-on-surface-variant" size={48} />
           <p className="max-w-sm text-sm text-on-surface-variant">
-            Upload a PDF from the sidebar or load the sample document to begin collaborative redaction.
+            Upload a PDF from the sidebar. When Convex is configured, picks sync across your accessible documents.
           </p>
-          {emptyAction}
         </div>
       )}
 

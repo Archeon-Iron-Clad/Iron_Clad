@@ -15,7 +15,7 @@ type Props = {
   userEmail: string
   myGroups: GroupRow[] | undefined
   activeGroupId: string | null
-  onSelectScope: (groupId: string | null) => void
+  onSelectScope: (groupId: string | null) => void | Promise<void>
   newGroupName: string
   onNewGroupNameChange: (v: string) => void
   onCreateGroup: (e: React.FormEvent) => void | Promise<void>
@@ -79,7 +79,7 @@ export function TeamsPage({
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => onSelectScope(null)}
+                    onClick={() => void onSelectScope(null)}
                     className={`rounded-lg border px-4 py-2 text-sm transition-colors ${pill(activeGroupId === null)}`}
                   >
                     Personal
@@ -88,7 +88,7 @@ export function TeamsPage({
                     <button
                       key={group._id}
                       type="button"
-                      onClick={() => onSelectScope(group._id)}
+                      onClick={() => void onSelectScope(group._id)}
                       className={`rounded-lg border px-4 py-2 text-sm transition-colors ${pill(activeGroupId === group._id)}`}
                     >
                       {group.name}
@@ -128,8 +128,8 @@ export function TeamsPage({
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-semibold text-on-surface">People on this team</h2>
             <p className="mt-0.5 text-xs text-on-surface-variant">
-              Admins can invite teammates by email ({userEmail.split('@')[1] ?? 'your domain'} colleagues must sign in with
-              the same flow as you).
+              Admins can invite teammates by email ({userEmail.split('@')[1] ?? 'your domain'}). Invited users should sign in
+              with the same email (start a session under that address).
             </p>
 
             {!convexReady ? null : activeGroupId === null ? (

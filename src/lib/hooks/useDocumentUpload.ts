@@ -3,10 +3,7 @@ import { useCallback, useState } from 'react'
 import type { Id } from '../../../convex/_generated/dataModel'
 import { api } from '../../../convex/_generated/api'
 
-export function useDocumentUpload(
-  userEmail: string,
-  groupId: Id<'groups'> | null | undefined,
-) {
+export function useDocumentUpload(sessionToken: string, groupId: Id<'groups'> | null | undefined) {
   const generateUploadUrl = useMutation(api.documents.generateUploadUrl)
   const createDocument = useMutation(api.documents.create)
   const [uploading, setUploading] = useState(false)
@@ -17,7 +14,7 @@ export function useDocumentUpload(
       setUploading(true)
       setError(null)
       try {
-        const postUrl = await generateUploadUrl({ userEmail })
+        const postUrl = await generateUploadUrl({ sessionToken })
         const result = await fetch(postUrl, {
           method: 'POST',
           headers: { 'Content-Type': file.type || 'application/pdf' },
@@ -28,7 +25,7 @@ export function useDocumentUpload(
         const documentId = await createDocument({
           storageId,
           name: file.name,
-          userEmail,
+          sessionToken,
           groupId: groupId ?? undefined,
         })
         return documentId
@@ -39,7 +36,7 @@ export function useDocumentUpload(
         setUploading(false)
       }
     },
-    [createDocument, generateUploadUrl, userEmail, groupId],
+    [createDocument, generateUploadUrl, sessionToken, groupId],
   )
 
   return { uploadPdf, uploading, error }

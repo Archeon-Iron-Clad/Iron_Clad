@@ -1,20 +1,18 @@
 import { v } from "convex/values";
-import type { Doc } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
-import { canAccessDocument, isGroupMember, normalizeEmail } from "./lib/access";
+import { canAccessDocument, isGroupMember } from "./lib/access";
+import { listAccessibleDocuments } from "./lib/accessibleDocuments";
+import { requireUserEmail } from "./lib/sessionHelpers";
 
 export const create = mutation({
   args: {
     storageId: v.id("_storage"),
     name: v.string(),
-    userEmail: v.string(),
+    sessionToken: v.string(),
     groupId: v.optional(v.id("groups")),
   },
   handler: async (ctx, args) => {
-    const createdBy = normalizeEmail(args.userEmail);
-    if (!createdBy.includes("@")) {
-      throw new Error("Invalid email");
-    }
+    const createdBy = await requireUserEmail(ctx, args.sessionToken);
     if (args.groupId !== undefined) {
       const ok = await isGroupMember(ctx, createdBy, args.groupId);
       if (!ok) throw new Error("Forbidden");
@@ -31,10 +29,9 @@ export const create = mutation({
 });
 
 export const get = query({
-  args: { documentId: v.id("documents"), userEmail: v.string() },
-  handler: async (ctx, { documentId, userEmail }) => {
-    const u = normalizeEmail(userEmail);
-    if (!u.includes("@")) throw new Error("Invalid email");
+  args: { documentId: v.id("documents"), sessionToken: v.string() },
+  handler: async (ctx, { documentId, sessionToken }) => {
+    const u = await requireUserEmail(ctx, sessionToken);
     const doc = await ctx.db.get(documentId);
     if (!doc) return null;
     if (!(await canAccessDocument(ctx, u, doc))) {
@@ -45,59 +42,25 @@ export const get = query({
 });
 
 export const listAccessible = query({
-  args: { userEmail: v.string() },
-  handler: async (ctx, { userEmail }) => {
-    const u = normalizeEmail(userEmail);
-    if (!u.includes("@")) return [];
-
-    const personal = await ctx.db
-      .query("documents")
-      .withIndex("by_createdBy", (q) => q.eq("createdBy", u))
-      .collect();
-
-    const memberships = await ctx.db
-      .query("groupMembers")
-      .withIndex("by_user", (q) => q.eq("userId", u))
-      .collect();
-
-    const groupDocs: Doc<"documents">[] = [];
-    for (const m of memberships) {
-      const docs = await ctx.db
-        .query("documents")
-        .withIndex("by_group", (q) => q.eq("groupId", m.groupId))
-        .collect();
-      groupDocs.push(...docs);
-    }
-
-    const seen = new Set<string>();
-    const merged: Doc<"documents">[] = [];
-    for (const d of [...personal, ...groupDocs]) {
-      const id = d._id as string;
-      if (seen.has(id)) continue;
-      seen.add(id);
-      merged.push(d);
-    }
-
-    return merged.sort((a, b) => b.createdAt - a.createdAt);
+  args: { sessionToken: v.string() },
+  handler: async (ctx, { sessionToken }) => {
+    const u = await requireUserEmail(ctx, sessionToken);
+    return await listAccessibleDocuments(ctx, u);
   },
 });
 
 export const generateUploadUrl = mutation({
-  args: { userEmail: v.string() },
+  args: { sessionToken: v.string() },
   handler: async (ctx, args) => {
-    const e = normalizeEmail(args.userEmail);
-    if (!e.includes("@")) {
-      throw new Error("Invalid email");
-    }
+    await requireUserEmail(ctx, args.sessionToken);
     return await ctx.storage.generateUploadUrl();
   },
 });
 
 export const getFileUrl = query({
-  args: { storageId: v.id("_storage"), userEmail: v.string() },
-  handler: async (ctx, { storageId, userEmail }) => {
-    const u = normalizeEmail(userEmail);
-    if (!u.includes("@")) throw new Error("Invalid email");
+  args: { storageId: v.id("_storage"), sessionToken: v.string() },
+  handler: async (ctx, { storageId, sessionToken }) => {
+    const u = await requireUserEmail(ctx, sessionToken);
 
     const doc = await ctx.db
       .query("documents")

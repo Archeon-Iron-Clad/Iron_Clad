@@ -73,4 +73,14 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_document_lastSeen", ["documentId", "lastSeen"]),
+
+  sessions: defineTable({
+    token: v.string(),
+    email: v.string(),
+    preferredUploadGroupId: v.optional(v.id("groups")),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  })
+    .index("by_token", ["token"])
+    .index("by_email", ["email"]),
 });

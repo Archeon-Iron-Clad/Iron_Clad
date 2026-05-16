@@ -1,29 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useMutation } from 'convex/react'
 import { Icon } from '../components/ui/Icon'
 import { PresenceBadge } from '../components/presence/PresenceBadge'
-import { setStoredUserEmail, clearStoredUserEmail } from '../lib/userEmail'
+import { api } from '../../convex/_generated/api'
+import { isConvexConfigured } from '../lib/convexClient'
+import { clearStoredSessionToken } from '../lib/sessionToken'
 
 type Props = {
   userEmail: string
-  convexReady: boolean
+  sessionToken: string
 }
 
-export function SettingsPage({ userEmail, convexReady }: Props) {
-  const [nextEmail, setNextEmail] = useState(userEmail)
+export function SettingsPage({ userEmail, sessionToken }: Props) {
+  const convexReady = isConvexConfigured()
+  const revokeSession = useMutation(api.session.revokeSession)
 
-  useEffect(() => setNextEmail(userEmail), [userEmail])
-
-  const submitEmailChange = (e: React.FormEvent) => {
-    e.preventDefault()
-    const trimmed = nextEmail.trim().toLowerCase()
-    if (!trimmed.includes('@')) return
-    if (trimmed === userEmail) return
-    setStoredUserEmail(trimmed)
-    window.location.reload()
-  }
-
-  const onClearIdentity = () => {
-    clearStoredUserEmail()
+  const onSignOut = async () => {
+    try {
+      await revokeSession({ sessionToken })
+    } catch {
+      /* still clear local token */
+    }
+    clearStoredSessionToken()
     window.location.reload()
   }
 
@@ -44,7 +41,7 @@ export function SettingsPage({ userEmail, convexReady }: Props) {
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-semibold text-on-surface">Identity</h2>
             <p className="mt-0.5 text-xs text-on-surface-variant">
-              No password—we keep this email only to attribute redactions on the server (not verified).
+              Your email labels this Convex session—sign out below to switch accounts.
             </p>
 
             <p className="mt-4 text-xs font-medium uppercase tracking-wider text-on-surface-variant">Current session</p>
@@ -52,36 +49,17 @@ export function SettingsPage({ userEmail, convexReady }: Props) {
               {userEmail}
             </code>
 
-            <form className="mt-6 flex flex-wrap items-end gap-3 border-t border-outline-variant pt-6" onSubmit={submitEmailChange}>
-              <label className="flex min-w-[14rem] flex-1 flex-col gap-1 text-xs font-medium text-on-surface-variant">
-                Change work email
-                <input
-                  type="email"
-                  autoComplete="email"
-                  value={nextEmail}
-                  onChange={(e) => setNextEmail(e.target.value)}
-                  className="rounded-lg border border-outline-variant bg-background px-3 py-2 text-sm text-on-surface"
-                />
-              </label>
-              <button
-                type="submit"
-                className="rounded-lg border border-outline-variant bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:opacity-90"
-              >
-                Update email
-              </button>
-            </form>
-
             <div className="mt-6 border-t border-outline-variant pt-6">
+              <p className="text-sm text-on-surface-variant">
+                To use a different email, sign out on this device and sign in again with another address.
+              </p>
               <button
                 type="button"
-                onClick={() => void onClearIdentity()}
-                className="text-sm text-secondary underline-offset-4 hover:underline"
+                onClick={() => void onSignOut()}
+                className="mt-4 rounded-lg border border-outline-variant bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:opacity-90"
               >
-                Clear saved email & sign out of this workspace
+                Sign out
               </button>
-              <p className="mt-1 text-xs text-on-surface-variant">
-                Same as before: you&apos;ll enter your email again on the next screen.
-              </p>
             </div>
           </div>
         </div>
@@ -95,7 +73,7 @@ export function SettingsPage({ userEmail, convexReady }: Props) {
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-semibold text-on-surface">Backend (Convex)</h2>
             <p className="mt-2 text-xs text-on-surface-variant">
-              Teams, documents, and redactions sync through Convex when a deployment URL is configured.
+              Sessions, documents, teams, and redactions are stored here.
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <PresenceBadge label={convexReady ? 'Convex URL configured' : 'Convex URL missing'} />

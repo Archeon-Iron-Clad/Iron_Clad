@@ -17,6 +17,11 @@ type Props = {
   onAddDocument: () => void
   uploading?: boolean
   draftCount?: number
+  /** Shown in the case header (e.g. team name or "Personal workspace"). */
+  workspaceTitle: string
+  workspaceSubtitle?: string
+  /** Short label in the badge (e.g. doc count or initials). */
+  badgeLabel: string
 }
 
 const SIDE_ITEMS: { id: SideNavId; icon: string; label: string; iconClass?: string }[] = [
@@ -36,17 +41,20 @@ export function LeftSidebar({
   onAddDocument,
   uploading,
   draftCount = 0,
+  workspaceTitle,
+  workspaceSubtitle = 'Workspace',
+  badgeLabel,
 }: Props) {
   return (
     <aside className="fixed left-0 top-14 z-40 flex h-[calc(100vh-3.5rem)] w-64 flex-col overflow-y-auto border-r border-outline-variant bg-surface-bright">
       <div className="border-b border-outline-variant p-4">
         <div className="mb-1 flex items-center gap-3">
           <span className="flex size-8 items-center justify-center rounded border border-outline bg-primary-container text-[10px] font-bold text-on-primary">
-            442
+            {badgeLabel.slice(0, 3)}
           </span>
           <div>
-            <p className="text-sm font-bold leading-none">Case #442-B</p>
-            <p className="text-[10px] uppercase tracking-wider text-on-surface-variant">Active Litigation</p>
+            <p className="text-sm font-bold leading-none">{workspaceTitle}</p>
+            <p className="text-[10px] uppercase tracking-wider text-on-surface-variant">{workspaceSubtitle}</p>
           </div>
         </div>
         <button
@@ -108,17 +116,6 @@ export function LeftSidebar({
           </div>
         )}
       </nav>
-
-      <div className="border-t border-outline-variant bg-surface-container-low p-2">
-        <button type="button" className="flex w-full items-center gap-3 rounded px-3 py-2 text-on-surface-variant hover:bg-surface-container-high">
-          <Icon name="help" />
-          <span className="text-xs font-semibold">Support</span>
-        </button>
-        <button type="button" className="flex w-full items-center gap-3 rounded px-3 py-2 text-on-surface-variant hover:bg-surface-container-high">
-          <Icon name="dark_mode" />
-          <span className="text-xs font-semibold">Dark Mode</span>
-        </button>
-      </div>
     </aside>
   )
 }

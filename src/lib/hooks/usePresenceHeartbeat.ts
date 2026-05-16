@@ -6,7 +6,7 @@ import { api } from '../../../convex/_generated/api'
 const HEARTBEAT_MS = 25_000
 
 export function usePresenceHeartbeat(
-  userEmail: string,
+  sessionToken: string | null | undefined,
   documentId: Id<'documents'> | null,
   displayName?: string,
 ) {
@@ -14,16 +14,16 @@ export function usePresenceHeartbeat(
   const leaveDocument = useMutation(api.presence.leaveDocument)
 
   useEffect(() => {
-    if (!documentId) return
+    if (!sessionToken || !documentId) return
 
     const tick = () => {
-      void heartbeat({ userEmail, documentId, displayName })
+      void heartbeat({ sessionToken, documentId, displayName })
     }
     tick()
     const id = window.setInterval(tick, HEARTBEAT_MS)
     return () => {
       window.clearInterval(id)
-      void leaveDocument({ userEmail })
+      void leaveDocument({ sessionToken })
     }
-  }, [documentId, userEmail, displayName, heartbeat, leaveDocument])
+  }, [documentId, sessionToken, displayName, heartbeat, leaveDocument])
 }

@@ -8,13 +8,18 @@
  * @module
  */
 
+import type * as activity from "../activity.js";
+import type * as dashboard from "../dashboard.js";
 import type * as documents from "../documents.js";
 import type * as exemptionCodes from "../exemptionCodes.js";
 import type * as groups from "../groups.js";
 import type * as http from "../http.js";
 import type * as lib_access from "../lib/access.js";
+import type * as lib_accessibleDocuments from "../lib/accessibleDocuments.js";
+import type * as lib_sessionHelpers from "../lib/sessionHelpers.js";
 import type * as presence from "../presence.js";
 import type * as redactions from "../redactions.js";
+import type * as session from "../session.js";
 
 import type {
   ApiFromModules,
@@ -23,13 +28,18 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  activity: typeof activity;
+  dashboard: typeof dashboard;
   documents: typeof documents;
   exemptionCodes: typeof exemptionCodes;
   groups: typeof groups;
   http: typeof http;
   "lib/access": typeof lib_access;
+  "lib/accessibleDocuments": typeof lib_accessibleDocuments;
+  "lib/sessionHelpers": typeof lib_sessionHelpers;
   presence: typeof presence;
   redactions: typeof redactions;
+  session: typeof session;
 }>;
 
 /**
