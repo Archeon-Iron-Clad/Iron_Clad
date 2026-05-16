@@ -12,6 +12,7 @@ import { api } from '../convex/_generated/api'
 import type { Id } from '../convex/_generated/dataModel'
 import { IronCladLogo } from './components/branding/IronCladLogo'
 import { EmailGate } from './components/auth/EmailGate'
+import { LandingPage } from './pages/LandingPage'
 import { AppShell } from './components/layout/AppShell'
 import { SimpleRightPanel } from './components/layout/panels/SimpleRightPanel'
 import { WorkspaceRightPanel, type WorkspaceAllocation } from './components/layout/panels/WorkspaceRightPanel'
@@ -996,7 +997,7 @@ function App() {
   }
 
   if (!token) {
-    return <EmailGate />
+    return <LandingPage />
   }
 
   return <AuthenticatedApp sessionToken={token} />

@@ -1,0 +1,83 @@
+html:has(.marketing-landing) {
+  scroll-behavior: smooth;
+}
+
+.marketing-landing {
+  --font-display: 'Instrument Serif', Georgia, serif;
+  --mkt-bg: #060a12;
+  --mkt-surface: #0c1218;
+  --mkt-text: #e6ecf5;
+  --mkt-muted: #8e98a8;
+  --mkt-accent: #aac7ff;
+  --mkt-accent-strong: #0051d5;
+  --mkt-glow: rgba(170, 199, 255, 0.15);
+
+  background-color: var(--mkt-bg);
+  color: var(--mkt-text);
+  font-family: var(--font-sans);
+}
+
+.marketing-landing .font-display {
+  font-family: var(--font-display);
+}
+
+.marketing-grain::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.marketing-mesh {
+  background:
+    radial-gradient(ellipse 80% 50% at 20% -10%, rgba(0, 81, 213, 0.35), transparent),
+    radial-gradient(ellipse 60% 40% at 90% 10%, rgba(170, 199, 255, 0.12), transparent),
+    radial-gradient(ellipse 50% 30% at 50% 100%, rgba(49, 107, 243, 0.2), transparent),
+    var(--mkt-bg);
+}
+
+.marketing-glass {
+  background: rgba(12, 18, 24, 0.72);
+  backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.marketing-card {
+  background: linear-gradient(145deg, rgba(28, 38, 51, 0.6), rgba(12, 18, 24, 0.9));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition:
+    transform 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.35s ease,
+    box-shadow 0.35s ease;
+}
+
+.marketing-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(170, 199, 255, 0.25);
+  box-shadow: 0 20px 40px -12px var(--mkt-glow);
+}
+
+.marketing-doc-mock {
+  background: linear-gradient(180deg, #1a2433 0%, #111820 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+    0 40px 80px -20px rgba(0, 0, 0, 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:has(.marketing-landing) {
+    scroll-behavior: auto;
+  }
+
+  .marketing-card {
+    transition: none;
+  }
+
+  .marketing-card:hover {
+    transform: none;
+  }
+}
