@@ -1,47 +1,45 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import type { Id } from '../../convex/_generated/dataModel'
 import { Icon } from '../components/ui/Icon'
+import type { TeamsWithCasesPayload } from './TeamsPage'
 
 export type CreateCasePayload = {
-  name: string
+  matterName: string
   memberEmails: string[]
-  /** Add everyone already on this team/case roster (excluding the signed-in creator). */
-  importMembersFromGroupId?: Id<'groups'>
+  /** Copy everyone currently on another shared roster (excluding the signed-in creator). */
+  importMembersFromTeamId?: Id<'teams'>
   pdfFiles: File[]
 }
 
-type GroupRow = {
-  group: {
-    _id: Id<'groups'>
+type FlatCase = {
+  case: {
+    _id: Id<'cases'>
+    teamId: Id<'teams'>
     name: string
     createdAt: number
-    kind?: 'team' | 'case'
-    sourceTeamName?: string
+    isDefault: boolean
   }
-  role: 'admin' | 'member'
+  team: TeamsWithCasesPayload['team']
+  role: TeamsWithCasesPayload['role']
 }
 
 type Props = {
   convexReady: boolean
-  /** Matters (kind case only). */
-  myCases: GroupRow[] | undefined
-  /** Teams used to import a roster into a new case (kind team + legacy rows). */
-  teamsForRoster: GroupRow[] | undefined
-  activeGroupId: string | null
-  onOpenCase: (id: Id<'groups'>) => void
+  teamsPayload: TeamsWithCasesPayload[]
+  activeCaseId: string | null
+  onOpenCase: (caseId: Id<'cases'>) => void | Promise<void>
   onCreateCase: (payload: CreateCasePayload) => void | Promise<void>
-  /** Sidebar Create case bumps `wizardNonce`; handled marks opens we’ve processed. */
+  /** Sidebar Create case bumps `wizardNonce`; handled marks opens we've processed. */
   wizardNonce?: number
   wizardHandledNonce?: number
   onWizardConsumedNonce?: (nonce: number) => void
-  onDeleteCase: (groupId: Id<'groups'>) => void | Promise<void>
+  onDeleteCase: (caseId: Id<'cases'>) => void | Promise<void>
 }
 
 export function CasesPage({
   convexReady,
-  myCases,
-  teamsForRoster,
-  activeGroupId,
+  teamsPayload,
+  activeCaseId,
   onOpenCase,
   onCreateCase,
   wizardNonce = 0,
@@ -51,36 +49,59 @@ export function CasesPage({
 }: Props) {
   const pdfInputRef = useRef<HTMLInputElement>(null)
   const [createOpen, setCreateOpen] = useState(false)
-  const [name, setName] = useState('')
+  const [matterName, setMatterName] = useState('')
   const [memberRows, setMemberRows] = useState<string[]>([''])
-  const [importTeamId, setImportTeamId] = useState<Id<'groups'> | ''>('')
+  const [teamNameFilter, setTeamNameFilter] = useState('')
+  const [importTeamId, setImportTeamId] = useState<Id<'teams'> | ''>('')
   const [pdfs, setPdfs] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [pendingDelete, setPendingDelete] = useState<{ id: Id<'groups'>; name: string } | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<{ id: Id<'cases'>; summary: string } | null>(
+    null,
+  )
   const [deleteBusy, setDeleteBusy] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
+  const matterTiles = useMemo((): FlatCase[] => {
+    const acc: FlatCase[] = []
+    for (const tw of teamsPayload) {
+      for (const { case: c } of tw.cases) {
+        acc.push({ case: c, team: tw.team, role: tw.role })
+      }
+    }
+    acc.sort((a, b) => b.case.createdAt - a.case.createdAt)
+    return acc
+  }, [teamsPayload])
+
   useEffect(() => {
     if (!createOpen) {
-      setName('')
+      setMatterName('')
       setMemberRows([''])
+      setTeamNameFilter('')
       setImportTeamId('')
       setPdfs([])
       setFormError(null)
     }
   }, [createOpen])
 
+  const teamNameLc = teamNameFilter.trim().toLowerCase()
+
+  const collaborativeTeamsFilters = useMemo(() => {
+    const collabTeams = teamsPayload.filter((tw) => tw.team.kind === 'collab')
+    if (!teamNameLc) return collabTeams
+    return collabTeams.filter(({ team }) => team.name.toLowerCase().includes(teamNameLc))
+  }, [teamsPayload, teamNameLc])
+
   const teamSelectRows = useMemo(() => {
-    const list = teamsForRoster ?? []
-    if (!importTeamId) return list
-    if (list.some(({ group }) => group._id === importTeamId)) return list
-    const row = (teamsForRoster ?? []).find(({ group }) => group._id === importTeamId)
-    return row ? [row, ...list] : list
-  }, [importTeamId, teamsForRoster])
+    if (!importTeamId) return collaborativeTeamsFilters
+    if (collaborativeTeamsFilters.some(({ team }) => team._id === importTeamId))
+      return collaborativeTeamsFilters
+    const row = teamsPayload.find(({ team }) => team._id === importTeamId)
+    return row && row.team.kind === 'collab' ? [row, ...collaborativeTeamsFilters] : collaborativeTeamsFilters
+  }, [importTeamId, collaborativeTeamsFilters, teamsPayload])
 
   const importTeamMeta = importTeamId
-    ? (teamsForRoster ?? []).find(({ group }) => group._id === importTeamId)
+    ? teamsPayload.find(({ team }) => team._id === importTeamId)
     : undefined
 
   useEffect(() => {
@@ -120,15 +141,15 @@ export function CasesPage({
 
   async function submitCreate(e: FormEvent) {
     e.preventDefault()
-    const trimmed = name.trim()
+    const trimmed = matterName.trim()
     if (!trimmed || !convexReady || saving) return
     setFormError(null)
     setSaving(true)
     try {
       await onCreateCase({
-        name: trimmed,
+        matterName: trimmed,
         memberEmails: memberRows,
-        importMembersFromGroupId: importTeamId !== '' ? (importTeamId as Id<'groups'>) : undefined,
+        importMembersFromTeamId: importTeamId !== '' ? importTeamId : undefined,
         pdfFiles: pdfs,
       })
       setCreateOpen(false)
@@ -143,7 +164,7 @@ export function CasesPage({
   const removeMemberRow = (index: number) =>
     setMemberRows((rows) => (rows.length <= 1 ? [''] : rows.filter((_, i) => i !== index)))
 
-  const onPdfPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onPdfPick = (e: ChangeEvent<HTMLInputElement>) => {
     const list = e.target.files
     if (!list?.length) return
     const next = Array.from(list).filter(
@@ -155,8 +176,6 @@ export function CasesPage({
 
   const removePdf = (index: number) => setPdfs((prev) => prev.filter((_, i) => i !== index))
 
-  const cases = myCases ?? []
-
   return (
     <div className="min-h-full bg-surface p-6">
       <header className="mx-auto mb-8 max-w-6xl">
@@ -164,8 +183,8 @@ export function CasesPage({
           <div>
             <h1 className="text-2xl font-bold text-on-surface">Cases</h1>
             <p className="mt-1 text-sm text-on-surface-variant">
-              Cases are separate from Teams. Matters you create here do not reuse the Teams list—you can still invite members
-              by their session email or copy everyone from an existing Team by name.
+              Matters live under teams. Collaborative teams expose every matter row here; uploads always target the matter
+              selected in Teams/sidebar—even the empty Default shell.
             </p>
           </div>
         </div>
@@ -187,17 +206,18 @@ export function CasesPage({
           <span className="flex size-12 items-center justify-center rounded-full bg-secondary-container text-on-secondary-container">
             <Icon name="add" size={28} />
           </span>
-          <span className="text-sm font-semibold text-on-surface">Create case</span>
+          <span className="text-sm font-semibold text-on-surface">Collaborative matter</span>
           <span className="max-w-[14rem] text-center text-xs text-on-surface-variant">
-            Name the matter, add people by login email, optionally copy roster from an existing Team name, attach PDFs
+            Spins up a shared team with Default + named matter—invite teammates and attach PDFs
           </span>
         </button>
 
-        {cases.map(({ group, role }) => {
-          const active = activeGroupId === group._id
+        {matterTiles.map(({ case: c, team, role }) => {
+          const active = activeCaseId === c._id
+          const parentTeamTitle = team.kind === 'solo' ? 'Personal workspace' : team.name
           return (
             <div
-              key={group._id}
+              key={c._id}
               className={`flex min-h-[10.5rem] flex-col overflow-hidden rounded-xl border shadow-sm transition-all ${
                 active
                   ? 'border-secondary bg-secondary-container/15 ring-2 ring-secondary ring-offset-2 ring-offset-surface'
@@ -207,21 +227,17 @@ export function CasesPage({
               <button
                 type="button"
                 disabled={!convexReady}
-                onClick={() => convexReady && onOpenCase(group._id)}
+                onClick={() => convexReady && onOpenCase(c._id)}
                 className="flex min-h-[7.75rem] flex-1 flex-col px-5 py-4 text-left transition-colors hover:bg-surface-container-low disabled:opacity-50"
               >
                 <div className="mb-3 flex items-start gap-3">
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary-container text-sm font-bold text-on-secondary-container">
-                    {group.name.slice(0, 2).toUpperCase()}
+                    {c.name.slice(0, 2).toUpperCase()}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-base font-bold text-on-surface">{group.name}</p>
-                    <p className="mt-0.5 text-xs text-on-surface-variant">{fmt(group.createdAt)}</p>
-                    {group.sourceTeamName ? (
-                      <p className="mt-1 truncate text-[11px] text-secondary">
-                        Team roster: <span className="font-semibold">{group.sourceTeamName}</span>
-                      </p>
-                    ) : null}
+                    <p className="truncate text-base font-bold text-on-surface">{c.name}</p>
+                    <p className="mt-0.5 text-xs font-medium text-secondary">{parentTeamTitle}</p>
+                    <p className="mt-0.5 text-xs text-on-surface-variant">{fmt(c.createdAt)}</p>
                   </div>
                 </div>
                 <div className="mt-auto flex items-center gap-2 text-xs">
@@ -232,11 +248,16 @@ export function CasesPage({
                         : 'bg-surface-container-highest text-on-surface-variant'
                     }`}
                   >
-                    {role === 'admin' ? 'Lead' : 'Member'}
+                    {role === 'admin' ? 'Lead on team' : 'Member'}
                   </span>
+                  {c.isDefault ? (
+                    <span className="rounded-full bg-outline-variant px-2 py-0.5 font-semibold text-on-surface-variant">
+                      Shell matter
+                    </span>
+                  ) : null}
                 </div>
               </button>
-              {role === 'admin' ? (
+              {role === 'admin' && !c.isDefault ? (
                 <div className="flex items-center justify-end border-t border-outline-variant px-2 py-1.5">
                   <button
                     type="button"
@@ -246,11 +267,14 @@ export function CasesPage({
                       e.preventDefault()
                       e.stopPropagation()
                       setDeleteError(null)
-                      setPendingDelete({ id: group._id, name: group.name })
+                      setPendingDelete({
+                        id: c._id,
+                        summary: `${team.name} › ${c.name}`,
+                      })
                     }}
                   >
                     <Icon name="delete_outline" size={16} aria-hidden />
-                    Delete case
+                    Delete matter
                   </button>
                 </div>
               ) : null}
@@ -273,56 +297,62 @@ export function CasesPage({
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="create-case-heading" className="text-lg font-bold text-on-surface">
-              New case
+              New collaborative matter
             </h2>
             <p className="mt-1 text-sm text-on-surface-variant">
-              Invite people using the same email address they sign in with. Optionally copy membership from one of your Teams
-              (by name below). Addresses are merged—you can combine both methods.
+              We create a shared team whose name mirrors this matter plus a substantive matter beside the empty Default shell.
+              Add people manually or prefilled from another team roster. PDF uploads land on your new substantive matter—not
+              the Default shell—unless you revisit later via Teams/sidebar.
             </p>
 
             <form className="mt-5 flex flex-col gap-5" onSubmit={(e) => void submitCreate(e)}>
               {formError ? (
-                <div className="whitespace-pre-wrap rounded-lg border border-error-container bg-error-container px-3 py-2 text-sm text-on-error-container">
+                <div className="rounded-lg border border-error-container bg-error-container px-3 py-2 text-sm text-on-error-container">
                   {formError}
                 </div>
               ) : null}
 
-              <div className="flex flex-col gap-1">
-                <label className="flex flex-col gap-1 text-xs font-medium text-on-surface-variant" htmlFor="case-name-input">
-                  Case name
-                </label>
+              <label className="flex flex-col gap-1 text-xs font-medium text-on-surface-variant">
+                Matter + team headline
                 <input
-                  id="case-name-input"
                   autoFocus
-                  autoComplete="off"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Enter a name for this matter"
-                  disabled={saving || !convexReady}
-                  className="rounded-lg border border-outline-variant bg-background px-3 py-2 text-sm text-on-surface outline-none ring-secondary focus:border-transparent focus:ring-2 disabled:opacity-50"
+                  value={matterName}
+                  onChange={(e) => setMatterName(e.target.value)}
+                  placeholder="e.g. Smith v. Acme · Phase 2"
+                  className="rounded-lg border border-outline-variant bg-background px-3 py-2 text-sm text-on-surface outline-none ring-secondary focus:border-transparent focus:ring-2"
                 />
-              </div>
+              </label>
 
               <fieldset className="flex flex-col gap-2 rounded-lg border border-outline-variant/80 bg-surface-container-low/40 p-3">
                 <legend className="px-1 text-xs font-semibold text-on-surface">
-                  Copy roster from a Team (optional)
+                  Prefill roster from existing shared team (optional)
                 </legend>
                 <p className="text-[11px] text-on-surface-variant">
-                  Teams you joined on the Teams page appear below. Selecting one copies everyone (except you) onto this case.
-                  You can still refine login emails below.
+                  Copy everyone invited to another team (excluding yourself). Addresses merge with manual rows below.
                 </p>
                 <label className="flex flex-col gap-1 text-xs font-medium text-on-surface-variant">
-                  Team to copy members from
+                  Filter by team name
+                  <input
+                    value={teamNameFilter}
+                    onChange={(e) => setTeamNameFilter(e.target.value)}
+                    placeholder="Type part of the shared team…"
+                    autoComplete="off"
+                    disabled={saving || !convexReady}
+                    className="rounded-lg border border-outline-variant bg-background px-3 py-2 text-sm text-on-surface outline-none ring-secondary focus:border-transparent focus:ring-2 disabled:opacity-50"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs font-medium text-on-surface-variant">
+                  Shared team roster to copy from
                   <select
                     value={importTeamId}
                     disabled={saving || !convexReady}
-                    onChange={(e) => setImportTeamId(e.target.value as Id<'groups'> | '')}
+                    onChange={(e) => setImportTeamId(e.target.value as Id<'teams'> | '')}
                     className="rounded-lg border border-outline-variant bg-background px-3 py-2 text-sm text-on-surface outline-none ring-secondary focus:border-transparent focus:ring-2 disabled:opacity-50"
                   >
                     <option value="">— None — invite only by email below</option>
-                    {teamSelectRows.map(({ group, role }) => (
-                      <option key={group._id} value={group._id}>
-                        {group.name}
+                    {teamSelectRows.map(({ team, role }) => (
+                      <option key={team._id} value={team._id}>
+                        {team.name}
                         {' · '}
                         {role === 'admin' ? 'you are lead there' : 'you are member'}
                       </option>
@@ -331,7 +361,10 @@ export function CasesPage({
                 </label>
                 {importTeamMeta ? (
                   <p className="text-[11px] text-secondary">
-                    Roster will be pulled from <span className="font-semibold">{importTeamMeta.group.name}</span>
+                    Roster pulls from{' '}
+                    <span className="font-semibold">
+                      {importTeamMeta.team.kind === 'solo' ? 'Personal workspace' : importTeamMeta.team.name}
+                    </span>
                     .
                   </p>
                 ) : null}
@@ -339,22 +372,17 @@ export function CasesPage({
 
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-on-surface-variant">
-                    Invite by login email{' '}
-                    <span className="block font-normal text-[11px] text-on-surface-variant/85">
-                      (same address they use to sign into Iron Clad)
-                    </span>
-                  </span>
+                  <span className="text-xs font-medium text-on-surface-variant">Extra invite emails</span>
                   <button
                     type="button"
-                    className="shrink-0 text-xs font-semibold text-secondary hover:underline"
+                    className="text-xs font-semibold text-secondary hover:underline"
                     onClick={addMemberRow}
                   >
-                    + Add email
+                    + Add email row
                   </button>
                 </div>
                 <p className="text-[11px] text-on-surface-variant">
-                  Combined with team roster import above. You are included automatically as lead on this case.
+                  Combined with roster import above. You stay lead on both the new shared team and the substantive matter&apos;s uploads.
                 </p>
                 <ul className="flex flex-col gap-2">
                   {memberRows.map((row, i) => (
@@ -400,7 +428,7 @@ export function CasesPage({
                   className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-outline-variant bg-surface-container-low py-3 text-sm font-semibold text-on-surface transition-colors hover:border-secondary hover:bg-surface-container"
                 >
                   <Icon name="upload_file" size={20} />
-                  Add PDFs (one or many)
+                  Add PDFs (attach to substantive matter)
                 </button>
                 {pdfs.length > 0 ? (
                   <ul className="max-h-32 overflow-y-auto rounded-lg border border-outline-variant bg-background p-2 text-xs">
@@ -419,7 +447,9 @@ export function CasesPage({
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-[11px] text-on-surface-variant">No files selected yet — you can add them later from the workspace.</p>
+                  <p className="text-[11px] text-on-surface-variant">
+                    No files selected—you can bulk upload anytime from Thumbnails once the matter is highlighted.
+                  </p>
                 )}
               </div>
 
@@ -434,10 +464,10 @@ export function CasesPage({
                 </button>
                 <button
                   type="submit"
-                  disabled={saving || !name.trim()}
+                  disabled={saving || !matterName.trim()}
                   className="rounded-lg bg-secondary px-4 py-2 text-sm font-semibold text-on-secondary hover:opacity-90 disabled:opacity-50"
                 >
-                  {saving ? 'Creating case…' : 'Create case'}
+                  {saving ? 'Creating…' : 'Create collaborative matter'}
                 </button>
               </div>
             </form>
@@ -459,11 +489,12 @@ export function CasesPage({
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="del-case-heading" className="text-lg font-bold text-on-surface">
-              Delete case?
+              Delete matter?
             </h2>
             <p id="del-case-desc" className="mt-2 text-sm text-on-surface-variant">
-              Permanently remove <span className="font-semibold text-on-surface">&quot;{pendingDelete.name}&quot;</span>.
-              Shared PDFs, redactions, and team memberships for this case will be deleted. This cannot be undone.
+              Remove <span className="font-semibold text-on-surface">&quot;{pendingDelete.summary}&quot;</span> forever.
+              PDFs, redactions, and audit artifacts under this matter will be erased. Membership on the encompassing team stays
+              intact if other matters remain.
             </p>
             {deleteError ? (
               <div className="mt-3 rounded-lg border border-error-container bg-error-container px-3 py-2 text-sm text-on-error-container">
@@ -485,7 +516,7 @@ export function CasesPage({
                 className="rounded-lg bg-error px-4 py-2 text-sm font-semibold text-on-error hover:opacity-90 disabled:opacity-50"
                 onClick={() => void confirmDelete()}
               >
-                {deleteBusy ? 'Deleting…' : 'Delete case'}
+                {deleteBusy ? 'Deleting…' : 'Delete matter'}
               </button>
             </div>
           </div>

@@ -1,5 +1,6 @@
 import { useMutation } from 'convex/react'
 import { useState } from 'react'
+import { IronCladLogo } from '../branding/IronCladLogo'
 import { api } from '../../../convex/_generated/api'
 import { isConvexConfigured } from '../../lib/convexClient'
 import { setStoredSessionToken } from '../../lib/sessionToken'
@@ -34,7 +35,8 @@ export function EmailGate() {
 
   if (!convexReady) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4">
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 px-4">
+        <IronCladLogo imgClassName="max-h-[52px]" />
         <p className="max-w-md text-center text-sm text-amber-800">
           Set <code className="rounded bg-amber-50 px-1">VITE_CONVEX_URL</code> in{' '}
           <code className="rounded bg-amber-50 px-1">.env.local</code> and run{' '}
@@ -46,7 +48,8 @@ export function EmailGate() {
 
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4">
-      <p className="max-w-sm text-center text-sm text-zinc-600">
+      <IronCladLogo imgClassName="max-h-[52px]" />
+      <p className="max-w-sm text-center text-sm text-zinc-600 dark:text-zinc-400">
         Enter your work email to continue. This labels your edits and Convex session; identity is{' '}
         <strong>not</strong> verified by a third party.
       </p>

@@ -15,7 +15,7 @@ export const summaryForUser = query({
       documentId: string;
       name: string;
       createdAt: number;
-      groupId: string | undefined;
+      caseId: string;
       draftCount: number;
       lockedCount: number;
       lastActivityAt: number;
@@ -41,7 +41,7 @@ export const summaryForUser = query({
         documentId: d._id,
         name: d.name,
         createdAt: d.createdAt,
-        groupId: d.groupId as string | undefined,
+        caseId: d.caseId as string,
         draftCount,
         lockedCount,
         lastActivityAt: Math.max(lastBox, d.createdAt),

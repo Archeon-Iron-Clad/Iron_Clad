@@ -11,12 +11,18 @@ export const api = {
     rename: makeFunctionReference<'mutation'>('documents:rename'),
     removeDocument: makeFunctionReference<'mutation'>('documents:removeDocument'),
   },
-  groups: {
-    create: makeFunctionReference<'mutation'>('groups:create'),
-    listMyGroups: makeFunctionReference<'query'>('groups:listMyGroups'),
-    listMembers: makeFunctionReference<'query'>('groups:listMembers'),
-    addMember: makeFunctionReference<'mutation'>('groups:addMember'),
-    removeMember: makeFunctionReference<'mutation'>('groups:removeMember'),
+  teams: {
+    createCollaborative: makeFunctionReference<'mutation'>('teams:createCollaborative'),
+    listTeamsWithCases: makeFunctionReference<'query'>('teams:listTeamsWithCases'),
+    listMembers: makeFunctionReference<'query'>('teams:listMembers'),
+    addMember: makeFunctionReference<'mutation'>('teams:addMember'),
+    removeMember: makeFunctionReference<'mutation'>('teams:removeMember'),
+    deleteCollaborativeTeam: makeFunctionReference<'mutation'>('teams:deleteCollaborativeTeam'),
+  },
+  cases: {
+    create: makeFunctionReference<'mutation'>('cases:create'),
+    deleteCaseAndDocuments: makeFunctionReference<'mutation'>('cases:deleteCaseAndDocuments'),
+    getTeamForCase: makeFunctionReference<'query'>('cases:getTeamForCase'),
   },
   exemptionCodes: {
     list: makeFunctionReference<'query'>('exemptionCodes:list'),

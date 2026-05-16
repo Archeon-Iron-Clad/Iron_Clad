@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { canAccessDocument, isGroupMember, requireDocumentAccess } from "./lib/access";
+import { canAccessDocument, canAccessCase, requireDocumentAccess } from "./lib/access";
 import { listAccessibleDocuments } from "./lib/accessibleDocuments";
 import { logDocumentAudit } from "./lib/auditLog";
 import { requireUserEmail } from "./lib/sessionHelpers";
@@ -10,21 +10,19 @@ export const create = mutation({
     storageId: v.id("_storage"),
     name: v.string(),
     sessionToken: v.string(),
-    groupId: v.optional(v.id("groups")),
+    caseId: v.id("cases"),
   },
   handler: async (ctx, args) => {
     const createdBy = await requireUserEmail(ctx, args.sessionToken);
-    if (args.groupId !== undefined) {
-      const ok = await isGroupMember(ctx, createdBy, args.groupId);
-      if (!ok) throw new Error("Forbidden");
-    }
+    const ok = await canAccessCase(ctx, createdBy, args.caseId);
+    if (!ok) throw new Error("Forbidden");
     const now = Date.now();
     const documentId = await ctx.db.insert("documents", {
       storageId: args.storageId,
       name: args.name,
       createdBy,
       createdAt: now,
-      groupId: args.groupId,
+      caseId: args.caseId,
     });
 
     await logDocumentAudit(ctx, {

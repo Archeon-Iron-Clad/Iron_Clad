@@ -1,4 +1,5 @@
 import type { TopNavId } from '../../navigation/routes'
+import { IronCladLogo } from '../branding/IronCladLogo'
 import { ExportCaseMenu } from './ExportCaseMenu'
 import { Icon } from '../ui/Icon'
 
@@ -41,7 +42,7 @@ export function TopAppBar({
   return (
     <header className="fixed top-0 z-50 flex h-14 w-full items-center justify-between border-b border-outline-variant bg-surface px-margin">
       <div className="flex items-center gap-6">
-        <span className="text-2xl font-bold tracking-tight text-on-surface">Iron Clad</span>
+        <IronCladLogo />
         <nav className="hidden items-center gap-4 md:flex">
           {TOP_LINKS.map(({ id, label }) => (
             <button key={id} type="button" onClick={() => onNavClick(id)} className={`text-sm ${navClass(id)}`}>

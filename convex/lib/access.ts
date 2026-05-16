@@ -7,16 +7,31 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-export async function isGroupMember(
+export async function isTeamMember(
   ctx: Ctx,
   userEmail: string,
-  groupId: Id<"groups">,
+  teamId: Id<"teams">,
 ): Promise<boolean> {
   const row = await ctx.db
-    .query("groupMembers")
-    .withIndex("by_group_and_user", (q) => q.eq("groupId", groupId).eq("userId", userEmail))
+    .query("teamMembers")
+    .withIndex("by_team_and_user", (q) => q.eq("teamId", teamId).eq("userId", userEmail))
     .unique();
   return row !== null;
+}
+
+async function getTeamIdForCase(
+  ctx: Ctx,
+  caseId: Id<"cases">,
+): Promise<Id<"teams"> | null> {
+  const c = await ctx.db.get(caseId);
+  return c?.teamId ?? null;
+}
+
+/** Caller must have trimmed session; returns false if unknown case. */
+export async function canAccessCase(ctx: Ctx, userEmail: string, caseId: Id<"cases">): Promise<boolean> {
+  const teamId = await getTeamIdForCase(ctx, caseId);
+  if (!teamId) return false;
+  return await isTeamMember(ctx, userEmail, teamId);
 }
 
 export async function canAccessDocument(
@@ -25,11 +40,7 @@ export async function canAccessDocument(
   document: Doc<"documents"> | null,
 ): Promise<boolean> {
   if (!document) return false;
-  if (document.groupId !== undefined) {
-    return await isGroupMember(ctx, userEmail, document.groupId);
-  }
-  if (document.createdBy === undefined) return false;
-  return document.createdBy === userEmail;
+  return await canAccessCase(ctx, userEmail, document.caseId);
 }
 
 export async function requireDocumentAccess(

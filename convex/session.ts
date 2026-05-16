@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { isGroupMember, normalizeEmail } from "./lib/access";
+import { canAccessCase, normalizeEmail } from "./lib/access";
+import { ensureSoloTeamAndDefaultCase } from "./lib/workspace";
 import { getSessionDoc } from "./lib/sessionHelpers";
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -19,10 +20,13 @@ export const signInWithEmail = mutation({
 
     const now = Date.now();
     const token = randomTokenHex();
+
+    const { defaultCaseId } = await ensureSoloTeamAndDefaultCase(ctx, normalized);
+
     await ctx.db.insert("sessions", {
       token,
       email: normalized,
-      preferredUploadGroupId: undefined,
+      preferredUploadCaseId: defaultCaseId,
       createdAt: now,
       expiresAt: now + SESSION_TTL_MS,
     });
@@ -31,16 +35,37 @@ export const signInWithEmail = mutation({
   },
 });
 
-export const getSession = query({  args: { sessionToken: v.string() },
+export const getSession = query({
+  args: { sessionToken: v.string() },
   handler: async (ctx, { sessionToken }) => {
     const s = await getSessionDoc(ctx, sessionToken);
     if (!s) return null;
     return {
       email: s.email,
       displayName: s.displayName ?? null,
-      preferredUploadGroupId: s.preferredUploadGroupId ?? null,
+      preferredUploadCaseId: s.preferredUploadCaseId ?? null,
       expiresAt: s.expiresAt,
     };
+  },
+});
+
+/** Idempotent repair for legacy tokens or orphaned preferences after teardown. */
+export const bootstrapPreferredCaseIfNeeded = mutation({
+  args: { sessionToken: v.string() },
+  handler: async (ctx, { sessionToken }) => {
+    const s = await getSessionDoc(ctx, sessionToken);
+    if (!s) throw new Error("Unauthorized");
+
+    await ensureSoloTeamAndDefaultCase(ctx, s.email);
+    let next = s.preferredUploadCaseId;
+    let valid = next ? await canAccessCase(ctx, s.email, next) : false;
+    if (!valid) {
+      const { defaultCaseId } = await ensureSoloTeamAndDefaultCase(ctx, s.email);
+      next = defaultCaseId;
+      await ctx.db.patch(s._id, { preferredUploadCaseId: next });
+    }
+
+    return { preferredUploadCaseId: next ?? null };
   },
 });
 
@@ -67,26 +92,20 @@ export const setDisplayName = mutation({
   },
 });
 
-export const setPreferredUploadGroup = mutation({
+export const setPreferredUploadCase = mutation({
   args: {
     sessionToken: v.string(),
-    scope: v.union(v.literal("personal"), v.id("groups")),
+    caseId: v.id("cases"),
   },
-  handler: async (ctx, { sessionToken, scope }) => {
+  handler: async (ctx, { sessionToken, caseId }) => {
     const session = await getSessionDoc(ctx, sessionToken);
     if (!session) throw new Error("Unauthorized");
     const email = session.email;
 
-    let nextGroup: typeof session.preferredUploadGroupId;
-    if (scope === "personal") {
-      nextGroup = undefined;
-    } else {
-      const ok = await isGroupMember(ctx, email, scope);
-      if (!ok) throw new Error("Forbidden");
-      nextGroup = scope;
-    }
+    const ok = await canAccessCase(ctx, email, caseId);
+    if (!ok) throw new Error("Forbidden");
 
-    await ctx.db.patch(session._id, { preferredUploadGroupId: nextGroup });
+    await ctx.db.patch(session._id, { preferredUploadCaseId: caseId });
     return { ok: true as const };
   },
 });

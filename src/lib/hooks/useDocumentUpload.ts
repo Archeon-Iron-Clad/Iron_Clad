@@ -1,57 +1,52 @@
 import { useMutation } from 'convex/react'
 import { useCallback, useState } from 'react'
-import type { Id } from '../../../convex/_generated/dataModel'
 import { api } from '../../../convex/_generated/api'
+import type { Id } from '../../../convex/_generated/dataModel'
 
-export function useDocumentUpload(sessionToken: string, groupId: Id<'groups'> | null | undefined) {
+export function useDocumentUpload(sessionToken: string, activeCaseId: Id<'cases'> | null | undefined) {
+  const [error, setError] = useState<string | null>(null)
   const generateUploadUrl = useMutation(api.documents.generateUploadUrl)
   const createDocument = useMutation(api.documents.create)
-  const [uploading, setUploading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   const uploadPdf = useCallback(
     async (
       file: File,
-      documentGroupId?: Id<'groups'> | null,
-      options?: { quiet?: boolean },
-    ): Promise<Id<'documents'> | null> => {
-      let resolved: Id<'groups'> | undefined
-      if (documentGroupId !== undefined) {
-        resolved = documentGroupId === null ? undefined : documentGroupId
-      } else {
-        resolved = groupId ?? undefined
+      documentCaseId?: Id<'cases'> | null,
+      opts?: { quiet?: boolean },
+    ): Promise<Id<'documents'> | undefined> => {
+      const resolvedCase = documentCaseId !== undefined && documentCaseId !== null ? documentCaseId : activeCaseId
+      if (!resolvedCase) {
+        if (!opts?.quiet) setError('Choose a matter (case) before uploading.')
+        return undefined
       }
-
-      const quiet = options?.quiet ?? false
-      if (!quiet) {
-        setUploading(true)
-        setError(null)
-      }
+      setError(null)
       try {
-        const postUrl = await generateUploadUrl({ sessionToken })
-        const result = await fetch(postUrl, {
+        const uploadUrl = await generateUploadUrl({ sessionToken })
+
+        const res = await fetch(uploadUrl, {
           method: 'POST',
           headers: { 'Content-Type': file.type || 'application/pdf' },
           body: file,
         })
-        if (!result.ok) throw new Error('Upload failed')
-        const { storageId } = (await result.json()) as { storageId: Id<'_storage'> }
+        const json = (await res.json()) as { storageId?: Id<'_storage'> }
+        const storageId = json.storageId
+        if (!storageId) throw new Error('Missing storage handle from upload response.')
+
         const documentId = await createDocument({
           storageId,
           name: file.name,
           sessionToken,
-          groupId: resolved,
+          caseId: resolvedCase,
         })
-        return documentId
-      } catch (e) {
-        if (!quiet) setError(e instanceof Error ? e.message : 'Upload failed')
-        return null
-      } finally {
-        if (!quiet) setUploading(false)
+        return documentId as Id<'documents'>
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Could not upload file.'
+        if (!opts?.quiet) setError(msg)
+        return undefined
       }
     },
-    [createDocument, generateUploadUrl, sessionToken, groupId],
+    [createDocument, generateUploadUrl, sessionToken, activeCaseId],
   )
 
-  return { uploadPdf, uploading, error }
+  return { uploadPdf, error }
 }

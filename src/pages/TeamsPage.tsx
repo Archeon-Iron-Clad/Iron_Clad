@@ -1,14 +1,29 @@
 import type { Id } from '../../convex/_generated/dataModel'
 import { Icon } from '../components/ui/Icon'
+import type { FormEvent } from 'react'
 
-type GroupRow = {
-  group: { _id: Id<'groups'>; name: string; createdAt: number; kind?: 'team' | 'case' }
+export type TeamsWithCasesPayload = {
+  team: {
+    _id: Id<'teams'>
+    name: string
+    createdAt: number
+    kind: 'solo' | 'collab'
+  }
   role: 'admin' | 'member'
+  cases: {
+    case: {
+      _id: Id<'cases'>
+      teamId: Id<'teams'>
+      name: string
+      createdAt: number
+      isDefault: boolean
+    }
+  }[]
 }
 
 type MemberRow = {
-  _id: Id<'groupMembers'>
-  groupId: Id<'groups'>
+  _id: Id<'teamMembers'>
+  teamId: Id<'teams'>
   userId: string
   role: 'admin' | 'member'
   joinedAt: number
@@ -17,58 +32,57 @@ type MemberRow = {
 type Props = {
   convexReady: boolean
   userEmail: string
-  myTeams: GroupRow[] | undefined
-  /** When upload scope points at a Case, Teams UI only edits Teams—explain mismatch. */
-  uploadScopeCaseName?: string | null
-  activeGroupId: string | null
-  onSelectScope: (groupId: string | null) => void | Promise<void>
-  newGroupName: string
-  onNewGroupNameChange: (v: string) => void
-  onCreateGroup: (e: React.FormEvent) => void | Promise<void>
-  membersForActiveGroup: MemberRow[] | undefined
-  isGroupAdmin: boolean
+  teamsPayload: TeamsWithCasesPayload[]
+  activeCaseId: string | null
+  onSelectCase: (caseId: Id<'cases'>) => void | Promise<void>
+  newCollaborativeTeamName: string
+  onNewCollaborativeTeamNameChange: (v: string) => void
+  onCreateCollaborativeTeamSubmit: (e: FormEvent) => void | Promise<void>
+  activeTeamForMembersId: Id<'teams'> | null
+  membersForActiveTeam: MemberRow[] | undefined
+  isTeamAdmin: boolean
   addMemberEmail: string
   onAddMemberEmailChange: (v: string) => void
-  onAddMember: (e: React.FormEvent) => void | Promise<void>
+  onAddMember: (e: FormEvent) => void | Promise<void>
   memberFeedback: string | null
   onRemoveMember: (targetEmail: string) => void
+  /** Full collaborative team teardown (admin-only). */
+  onDeleteTeam?: () => void
 }
 
 export function TeamsPage({
   convexReady,
   userEmail,
-  myTeams,
-  uploadScopeCaseName,
-  activeGroupId,
-  onSelectScope,
-  newGroupName,
-  onNewGroupNameChange,
-  onCreateGroup,
-  membersForActiveGroup,
-  isGroupAdmin,
+  teamsPayload,
+  activeCaseId,
+  onSelectCase,
+  newCollaborativeTeamName,
+  onNewCollaborativeTeamNameChange,
+  onCreateCollaborativeTeamSubmit,
+  activeTeamForMembersId,
+  membersForActiveTeam,
+  isTeamAdmin,
   addMemberEmail,
   onAddMemberEmailChange,
   onAddMember,
   memberFeedback,
   onRemoveMember,
+  onDeleteTeam,
 }: Props) {
-  const selectedTeamId =
-    activeGroupId !== null && myTeams?.some(({ group }) => group._id === activeGroupId)
-      ? activeGroupId
-      : null
+  const pillActive = 'border-secondary bg-secondary font-semibold text-on-secondary'
+  const pillIdle =
+    'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'
 
-  const pill = (selected: boolean) =>
-    selected
-      ? 'border-secondary bg-secondary font-semibold text-on-secondary'
-      : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'
+  const teamHeading = (payload: TeamsWithCasesPayload) =>
+    payload.team.kind === 'solo' ? 'Personal workspace' : payload.team.name
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-8">
       <header>
         <h1 className="text-2xl font-bold text-on-surface">Teams</h1>
         <p className="mt-1 text-sm text-on-surface-variant">
-          Shared folders that won&apos;t appear on the Cases page. Create Teams here for standing rosters—then reuse them when
-          you open or create a case. Uploads routed to a team are visible to every member.
+          Collaborative teams span multiple matters. Every PDF attaches to exactly one matter (case)—pick the highlighted
+          row before uploads from the sidebar.
         </p>
       </header>
 
@@ -78,10 +92,9 @@ export function TeamsPage({
             <Icon name="upload_file" />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold text-on-surface">Where new uploads go</h2>
+            <h2 className="text-sm font-semibold text-on-surface">Which matter receives uploads</h2>
             <p className="mt-0.5 text-xs text-on-surface-variant">
-              Choose before you upload from the sidebar. Personal files stay visible only to you. Teams listed here exclude
-              matters from the Cases page.
+              Matters are grouped under each team—Default case stays at the front of each list.
             </p>
             {!convexReady ? (
               <p className="mt-4 text-xs text-secondary">
@@ -89,41 +102,42 @@ export function TeamsPage({
               </p>
             ) : (
               <>
-                {uploadScopeCaseName ? (
-                  <p className="mt-4 rounded-lg border border-secondary-container bg-surface-container-low px-3 py-2 text-xs text-on-surface-variant">
-                    Your upload scope is currently the case{' '}
-                    <span className="font-semibold text-on-surface">&quot;{uploadScopeCaseName}&quot;</span>. Select Personal
-                    or a Team below when you want to manage sharing for a roster (or switch scope from Cases or workspace).
-                  </p>
-                ) : null}
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void onSelectScope(null)}
-                    className={`rounded-lg border px-4 py-2 text-sm transition-colors ${pill(activeGroupId === null)}`}
-                  >
-                    Personal
-                  </button>
-                  {myTeams?.map(({ group }) => (
-                    <button
-                      key={group._id}
-                      type="button"
-                      onClick={() => void onSelectScope(group._id)}
-                      className={`rounded-lg border px-4 py-2 text-sm transition-colors ${pill(activeGroupId === group._id)}`}
-                    >
-                      {group.name}
-                    </button>
+                <div className="mt-4 flex flex-col gap-4">
+                  {teamsPayload.map((tw) => (
+                    <div key={tw.team._id} className="rounded-lg border border-outline-variant bg-background p-3">
+                      <div className="mb-2 text-xs font-bold uppercase tracking-wide text-on-surface-variant">
+                        {teamHeading(tw)}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {tw.cases.map(({ case: c }) => (
+                          <button
+                            key={c._id}
+                            type="button"
+                            onClick={() => void onSelectCase(c._id)}
+                            className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${
+                              activeCaseId === c._id ? pillActive : pillIdle
+                            }`}
+                          >
+                            {c.name}
+                            {c.isDefault ? '' : ''}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   ))}
+                  {teamsPayload.length === 0 ? (
+                    <p className="text-xs text-on-surface-variant">Loading matters…</p>
+                  ) : null}
                 </div>
                 <form
                   className="mt-6 flex flex-wrap gap-2 border-t border-outline-variant pt-6"
-                  onSubmit={(e) => void onCreateGroup(e)}
+                  onSubmit={(e) => void onCreateCollaborativeTeamSubmit(e)}
                 >
                   <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs font-medium text-on-surface-variant">
-                    New team name
+                    New shared team name
                     <input
-                      value={newGroupName}
-                      onChange={(e) => onNewGroupNameChange(e.target.value)}
+                      value={newCollaborativeTeamName}
+                      onChange={(e) => onNewCollaborativeTeamNameChange(e.target.value)}
                       placeholder="e.g. Acme disclosure team"
                       className="rounded-lg border border-outline-variant bg-background px-3 py-2 text-sm text-on-surface"
                     />
@@ -133,7 +147,7 @@ export function TeamsPage({
                       type="submit"
                       className="rounded-lg border border-outline-variant bg-secondary-container px-4 py-2 text-sm font-semibold text-on-secondary-container hover:opacity-90"
                     >
-                      Create team
+                      Create team + default matter
                     </button>
                   </div>
                 </form>
@@ -151,20 +165,19 @@ export function TeamsPage({
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-semibold text-on-surface">People on this team</h2>
             <p className="mt-0.5 text-xs text-on-surface-variant">
-              Admins can invite teammates by email ({userEmail.split('@')[1] ?? 'your domain'}). Invited users should sign in
-              with the same email (start a session under that address).
+              Admins can invite teammates by email ({userEmail.split('@')[1] ?? 'your domain'}). Everyone must sign in with
+              the invited address so Convex can match membership.
             </p>
 
-            {!convexReady ? null : selectedTeamId === null ? (
+            {!convexReady ? null : activeTeamForMembersId === null ? (
               <p className="mt-4 text-sm text-on-surface-variant">
-                {activeGroupId === null
-                  ? 'Select a team above to see who has access and to add members.'
-                  : 'Your upload scope is a case or personal workspace. Select one of your Teams above to manage its roster and invites.'}
+                Pick a collaborative team&apos;s matter above to manage invitations. Personal workspace is single-player by
+                design.
               </p>
             ) : (
               <>
                 <ul className="mt-4 space-y-2">
-                  {membersForActiveGroup?.map((m) => (
+                  {membersForActiveTeam?.map((m) => (
                     <li
                       key={m._id}
                       className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-outline-variant bg-background px-3 py-2 text-sm text-on-surface"
@@ -177,7 +190,7 @@ export function TeamsPage({
                           </span>
                         ) : null}
                       </span>
-                      {(isGroupAdmin && m.userId !== userEmail) || m.userId === userEmail ? (
+                      {(isTeamAdmin && m.userId !== userEmail) || m.userId === userEmail ? (
                         <button
                           type="button"
                           className="shrink-0 text-xs font-semibold uppercase tracking-wide text-error hover:underline"
@@ -191,7 +204,7 @@ export function TeamsPage({
                 </ul>
 
                 <div className="mt-6 border-t border-outline-variant pt-6">
-                  {isGroupAdmin ? (
+                  {isTeamAdmin ? (
                     <form className="flex flex-wrap gap-2" onSubmit={(e) => void onAddMember(e)}>
                       <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs font-medium text-on-surface-variant">
                         Invite by email
@@ -216,10 +229,25 @@ export function TeamsPage({
                   ) : (
                     <p className="text-xs text-on-surface-variant">Only admins can add people to this team.</p>
                   )}
-                  {memberFeedback ? (
-                    <p className="mt-3 text-sm text-error">{memberFeedback}</p>
-                  ) : null}
+                  {memberFeedback ? <p className="mt-3 text-sm text-error">{memberFeedback}</p> : null}
                 </div>
+
+                {onDeleteTeam ? (
+                  <div className="mt-6 border-t border-outline-variant pt-4">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const ok =
+                          typeof window !== 'undefined' &&
+                          window.confirm('Delete entire shared team and every matter/document inside it?')
+                        if (ok) onDeleteTeam()
+                      }}
+                      className="text-xs font-bold uppercase tracking-wide text-error hover:underline"
+                    >
+                      Delete shared team permanently
+                    </button>
+                  </div>
+                ) : null}
               </>
             )}
           </div>

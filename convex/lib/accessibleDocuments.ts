@@ -1,39 +1,45 @@
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
 type Ctx = QueryCtx | MutationCtx;
 
-/** Personal + group documents accessible to normalized email `u`. */
+/** Documents reachable via team membership cases (solo + collab); sorted newest first. */
 export async function listAccessibleDocuments(ctx: Ctx, u: string): Promise<Doc<"documents">[]> {
   if (!u.includes("@")) return [];
 
-  const personal = await ctx.db
-    .query("documents")
-    .withIndex("by_createdBy", (q) => q.eq("createdBy", u))
-    .collect();
-
   const memberships = await ctx.db
-    .query("groupMembers")
+    .query("teamMembers")
     .withIndex("by_user", (q) => q.eq("userId", u))
     .collect();
 
-  const groupDocs: Doc<"documents">[] = [];
+  const caseIds = new Set<string>();
   for (const m of memberships) {
+    const casesRows = await ctx.db
+      .query("cases")
+      .withIndex("by_team", (q) => q.eq("teamId", m.teamId))
+      .collect();
+    for (const c of casesRows) {
+      caseIds.add(c._id as string);
+    }
+  }
+
+  const merged: Doc<"documents">[] = [];
+  for (const cid of caseIds) {
     const docs = await ctx.db
       .query("documents")
-      .withIndex("by_group", (q) => q.eq("groupId", m.groupId))
+      .withIndex("by_case", (q) => q.eq("caseId", cid as Id<"cases">))
       .collect();
-    groupDocs.push(...docs);
+    merged.push(...docs);
   }
 
   const seen = new Set<string>();
-  const merged: Doc<"documents">[] = [];
-  for (const d of [...personal, ...groupDocs]) {
+  const uniq: Doc<"documents">[] = [];
+  for (const d of merged) {
     const id = d._id as string;
     if (seen.has(id)) continue;
     seen.add(id);
-    merged.push(d);
+    uniq.push(d);
   }
 
-  return merged.sort((a, b) => b.createdAt - a.createdAt);
+  return uniq.sort((a, b) => b.createdAt - a.createdAt);
 }

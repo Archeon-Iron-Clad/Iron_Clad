@@ -10,10 +10,11 @@ import {
 } from 'react'
 import { api } from '../convex/_generated/api'
 import type { Id } from '../convex/_generated/dataModel'
+import { IronCladLogo } from './components/branding/IronCladLogo'
 import { EmailGate } from './components/auth/EmailGate'
 import { AppShell } from './components/layout/AppShell'
 import { SimpleRightPanel } from './components/layout/panels/SimpleRightPanel'
-import { WorkspaceRightPanel } from './components/layout/panels/WorkspaceRightPanel'
+import { WorkspaceRightPanel, type WorkspaceAllocation } from './components/layout/panels/WorkspaceRightPanel'
 import type { OverlayBox } from './components/pdf-viewer/RedactionOverlay'
 import { clearStoredSessionToken, getStoredSessionToken } from './lib/sessionToken'
 import { isConvexConfigured } from './lib/convexClient'
@@ -28,6 +29,7 @@ import { BatchPage } from './pages/BatchPage'
 import { ConflictsPage } from './pages/ConflictsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { SettingsPage } from './pages/SettingsPage'
+import type { TeamsWithCasesPayload } from './pages/TeamsPage'
 import { TeamsPage } from './pages/TeamsPage'
 import { CasesPage, type CreateCasePayload } from './pages/CasesPage'
 import { WorkspacePage } from './pages/WorkspacePage'
@@ -64,7 +66,7 @@ function initialsFromDisplayOrEmail(displayName: string | null | undefined, emai
 type SessionPayload = {
   email: string
   displayName: string | null
-  preferredUploadGroupId: Id<'groups'> | null
+  preferredUploadCaseId: Id<'cases'> | null
   expiresAt: number
 }
 
@@ -73,7 +75,8 @@ function AuthenticatedApp({ sessionToken }: { sessionToken: string }) {
 
   if (session === undefined) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center text-sm text-on-surface-variant">
+      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 text-sm text-on-surface-variant">
+        <IronCladLogo imgClassName="max-h-[52px]" />
         Loading session…
       </div>
     )
@@ -97,12 +100,12 @@ function MainApp({
   const convex = useConvex()
   const userEmail = session.email
   const displayName = session.displayName
-  const activeGroupId = session.preferredUploadGroupId
+  const activeCaseId = session.preferredUploadCaseId
 
   const [route, setRoute] = useState<AppRoute>('workspace')
   const [localPdfUrl, setLocalPdfUrl] = useState<string | undefined>(undefined)
   const [documentId, setDocumentId] = useState<Id<'documents'> | null>(null)
-  const [newGroupName, setNewGroupName] = useState('')
+  const [newCollaborativeTeamName, setNewCollaborativeTeamName] = useState('')
   const [addMemberEmail, setAddMemberEmail] = useState('')
   const [memberFeedback, setMemberFeedback] = useState<string | null>(null)
 
@@ -115,27 +118,18 @@ function MainApp({
   const thumbnailsInputRef = useRef<HTMLInputElement>(null)
   const convexReady = isConvexConfigured()
 
-  const myGroups = useQuery(api.groups.listMyGroups, convexReady ? { sessionToken } : 'skip')
+  const bootstrapPreferredCase = useMutation(api.session.bootstrapPreferredCaseIfNeeded)
+  useEffect(() => {
+    if (!convexReady || activeCaseId !== null) return
+    void bootstrapPreferredCase({ sessionToken }).catch(() => {})
+  }, [bootstrapPreferredCase, convexReady, activeCaseId, sessionToken])
 
-  const myTeamsOnly = useMemo(
-    () => myGroups?.filter(({ group }) => group.kind !== 'case'),
-    [myGroups],
+  const teamsWithCases = useQuery(api.teams.listTeamsWithCases, convexReady ? { sessionToken } : 'skip')
+
+  const teamsPayload: TeamsWithCasesPayload[] = useMemo(
+    () => teamsWithCases ?? [],
+    [teamsWithCases],
   )
-  const myCasesOnly = useMemo(
-    () => myGroups?.filter(({ group }) => group.kind === 'case'),
-    [myGroups],
-  )
-
-  const effectiveTeamManagementId = useMemo((): Id<'groups'> | undefined => {
-    if (activeGroupId === null) return undefined
-    return myTeamsOnly?.some(({ group }) => group._id === activeGroupId) ? activeGroupId : undefined
-  }, [activeGroupId, myTeamsOnly])
-
-  const scopedCaseUploadName = useMemo(() => {
-    if (activeGroupId === null || !myGroups) return null
-    const row = myGroups.find(({ group }) => group._id === activeGroupId)
-    return row?.group.kind === 'case' ? row.group.name : null
-  }, [activeGroupId, myGroups])
 
   const accessibleDocs = useQuery(api.documents.listAccessible, convexReady ? { sessionToken } : 'skip')
 
@@ -158,72 +152,59 @@ function MainApp({
     convexReady && documentId ? { documentId, sessionToken } : 'skip',
   )
 
-  const membersForActiveGroup = useQuery(
-    api.groups.listMembers,
-    convexReady && effectiveTeamManagementId
-      ? { groupId: effectiveTeamManagementId, sessionToken }
-      : 'skip',
+  const contextCaseId = useMemo(
+    () => selectedDoc?.caseId ?? activeCaseId ?? null,
+    [selectedDoc?.caseId, activeCaseId],
   )
 
-  const editorsGroupId = useMemo((): Id<'groups'> | null => {
-    const fromDoc = selectedDoc?.groupId ?? null
-    if (fromDoc) return fromDoc
-    return activeGroupId
-  }, [selectedDoc?.groupId, activeGroupId])
+  const contextCaseBundle = useMemo(() => {
+    if (!contextCaseId || !teamsWithCases?.length) return null
+    for (const tw of teamsWithCases) {
+      const hit = tw.cases.find(({ case: c }) => c._id === contextCaseId)
+      if (hit) return { tw, caseDoc: hit.case }
+    }
+    return null
+  }, [contextCaseId, teamsWithCases])
 
-  const allocatedEditorsForWorkspace = useQuery(
-    api.groups.listMembers,
-    convexReady && editorsGroupId ? { groupId: editorsGroupId, sessionToken } : 'skip',
+  const contextCaseTeamId = contextCaseBundle?.tw.team._id ?? null
+
+  const membersForEditorsTeam = useQuery(
+    api.teams.listMembers,
+    convexReady && contextCaseTeamId ? { teamId: contextCaseTeamId, sessionToken } : 'skip',
   )
 
-  const workspaceEditorAllocationContext = useMemo(() => {
-    if (!myGroups || !editorsGroupId) return null
-    const row = myGroups.find(({ group }) => group._id === editorsGroupId)
-    if (!row) return null
-    const kind = row.group.kind
-    const label =
-      kind === 'case' ? 'Case' : kind === 'team' ? 'Team' : 'Shared workspace'
-    return {
-      label,
-      name: row.group.name,
-      sourceTeamName: row.group.sourceTeamName,
+  const activeTeamIdForMembers = useMemo(() => {
+    if (!activeCaseId || !teamsWithCases?.length) return null
+    for (const tw of teamsWithCases) {
+      if (tw.cases.some(({ case: c }) => c._id === activeCaseId && tw.team.kind === 'collab')) {
+        return tw.team._id
+      }
     }
-  }, [myGroups, editorsGroupId])
+    return null
+  }, [activeCaseId, teamsWithCases])
 
-  const workspaceAllocation = useMemo(() => {
-    if (!convexReady || editorsGroupId === null) return { kind: 'none' as const }
-    if (myGroups === undefined || allocatedEditorsForWorkspace === undefined) {
-      return { kind: 'loading' as const }
-    }
-    if (!workspaceEditorAllocationContext) return { kind: 'loading' as const }
-    return {
-      kind: 'ready' as const,
-      context: workspaceEditorAllocationContext,
-      editors: allocatedEditorsForWorkspace,
-    }
-  }, [
-    convexReady,
-    editorsGroupId,
-    myGroups,
-    allocatedEditorsForWorkspace,
-    workspaceEditorAllocationContext,
-  ])
+  const membersForActiveTeam = useQuery(
+    api.teams.listMembers,
+    convexReady && activeTeamIdForMembers ? { teamId: activeTeamIdForMembers, sessionToken } : 'skip',
+  )
 
-  const setPreferredUploadGroup = useMutation(api.session.setPreferredUploadGroup)
+  const setPreferredUploadCase = useMutation(api.session.setPreferredUploadCase)
 
-  const createGroup = useMutation(api.groups.create)
-  const addMember = useMutation(api.groups.addMember)
-  const removeMember = useMutation(api.groups.removeMember)
+  const createCollaborativeTeam = useMutation(api.teams.createCollaborative)
+  const createAdditionalCase = useMutation(api.cases.create)
+  const addMember = useMutation(api.teams.addMember)
+  const removeMember = useMutation(api.teams.removeMember)
   const createBox = useMutation(api.redactions.createBox)
   const updateBox = useMutation(api.redactions.updateBox)
   const deleteBox = useMutation(api.redactions.deleteBox)
   const renameDocument = useMutation(api.documents.rename)
   const removeDocument = useMutation(api.documents.removeDocument)
-  const deleteGroupMutation = useMutation(api.groups.deleteGroup)
+  const deleteMatterMutation = useMutation(api.cases.deleteCaseAndDocuments)
+  const deleteTeamMutation = useMutation(api.teams.deleteCollaborativeTeam)
 
   const { uploadPdf, error: uploadError } = useDocumentUpload(
     sessionToken,
-    activeGroupId ?? undefined,
+    activeCaseId ?? undefined,
   )
 
   usePresenceHeartbeat(
@@ -266,32 +247,54 @@ function MainApp({
   )
 
   const draftCount = overlayBoxes.filter((b) => b.status === 'draft').length
-  const isTeamGroupAdmin =
-    myTeamsOnly?.find(({ group }) => group._id === effectiveTeamManagementId)?.role === 'admin'
 
-  const setGroupScope = useCallback(
-    async (id: string | null) => {
-      await setPreferredUploadGroup({
+  const activeCaseMeta = useMemo(() => {
+    if (!activeCaseId || !teamsWithCases) return null
+    for (const tw of teamsWithCases) {
+      const hit = tw.cases.find(({ case: c }) => c._id === activeCaseId)
+      if (hit) return { ...tw, caseDoc: hit.case }
+    }
+    return null
+  }, [activeCaseId, teamsWithCases])
+
+  const activeTeamMembership = activeCaseMeta?.role ?? null
+  const isTeamAdmin =
+    Boolean(activeTeamIdForMembers) && Boolean(activeTeamMembership === 'admin')
+
+  const setCaseScope = useCallback(
+    async (caseId: Id<'cases'> | string) => {
+      await setPreferredUploadCase({
         sessionToken,
-        scope: id === null ? 'personal' : (id as Id<'groups'>),
+        caseId: caseId as Id<'cases'>,
       })
     },
-    [sessionToken, setPreferredUploadGroup],
+    [sessionToken, setPreferredUploadCase],
   )
 
   useEffect(() => {
-    if (!convexReady || activeGroupId === null || myGroups === undefined) return
-    const stillMember = myGroups.some(({ group }) => group._id === activeGroupId)
-    if (!stillMember) {
-      void setGroupScope(null)
-      setDocumentId(null)
-      setLocalPdfUrl(undefined)
+    if (!convexReady || teamsWithCases === undefined || activeCaseId === null) return
+    const ok = teamsWithCases.some((tw) => tw.cases.some(({ case: c }) => c._id === activeCaseId))
+    if (!ok) void bootstrapPreferredCase({ sessionToken })
+  }, [convexReady, teamsWithCases, activeCaseId, bootstrapPreferredCase, sessionToken])
+
+  const workspaceAllocation = useMemo((): WorkspaceAllocation => {
+    if (!convexReady || activeCaseId === null) return { kind: 'loading' }
+    if (contextCaseBundle === null || membersForEditorsTeam === undefined) return { kind: 'loading' }
+    return {
+      kind: 'ready',
+      context: {
+        label: 'Matter',
+        name: contextCaseBundle.caseDoc.name,
+        sourceTeamName:
+          contextCaseBundle.tw.team.kind === 'collab' ? contextCaseBundle.tw.team.name : undefined,
+      },
+      editors: membersForEditorsTeam.map((m) => ({ userId: m.userId, role: m.role })),
     }
-  }, [activeGroupId, convexReady, myGroups, setGroupScope])
+  }, [activeCaseId, contextCaseBundle, convexReady, membersForEditorsTeam])
 
   const onSidebarBulkPdfFiles = async (f: FileList | null, inputReset: () => void) => {
     const list = f ? Array.from(f) : []
-    if (!list.length || !convexReady || activeGroupId === null) {
+    if (!list.length || !convexReady || activeCaseId === null) {
       inputReset()
       return
     }
@@ -304,7 +307,7 @@ function MainApp({
     try {
       for (const file of list) {
         if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) continue
-        const id = await uploadPdf(file, activeGroupId, { quiet: true })
+        const id = await uploadPdf(file, activeCaseId, { quiet: true })
         if (!id) failed += 1
         else if (!firstNew) firstNew = id
       }
@@ -327,33 +330,77 @@ function MainApp({
   const selectConvexDoc = useCallback(
     async (id: Id<'documents'>) => {
       const row = accessibleDocs?.find((d) => d._id === id)
-      if (row?.groupId) await setGroupScope(row.groupId)
+      if (row?.caseId) await setCaseScope(row.caseId)
       setDocumentId(id)
       setLocalPdfUrl(undefined)
       setRoute('workspace')
     },
-    [accessibleDocs, setGroupScope],
+    [accessibleDocs, setCaseScope],
   )
 
   const openCaseWorkspace = useCallback(
-    async (id: Id<'groups'>) => {
-      await setGroupScope(id)
+    async (caseRowId: Id<'cases'>) => {
+      await setCaseScope(caseRowId)
       setRoute('workspace')
     },
-    [setGroupScope],
+    [setCaseScope],
   )
 
-  const onDeleteCase = useCallback(
-    async (groupIdToDelete: Id<'groups'>) => {
+  const onDeleteCaseMatter = useCallback(
+    async (caseToDeleteId: Id<'cases'>) => {
       if (!convexReady) return
-      if (activeGroupId === groupIdToDelete) {
-        await setGroupScope(null)
+      await deleteMatterMutation({ caseId: caseToDeleteId, sessionToken })
+      if (activeCaseId === caseToDeleteId) {
+        try {
+          const r = await bootstrapPreferredCase({ sessionToken })
+          if (r.preferredUploadCaseId) await setCaseScope(r.preferredUploadCaseId)
+        } catch {
+          /* ignore */
+        }
         setDocumentId(null)
         setLocalPdfUrl(undefined)
       }
-      await deleteGroupMutation({ groupId: groupIdToDelete, userEmail: session.email })
     },
-    [activeGroupId, convexReady, deleteGroupMutation, session.email, setGroupScope],
+    [
+      activeCaseId,
+      bootstrapPreferredCase,
+      convexReady,
+      deleteMatterMutation,
+      sessionToken,
+      setCaseScope,
+    ],
+  )
+
+  const onDeleteCollaborativeTeam = useCallback(
+    async (teamIdToDelete: Id<'teams'>) => {
+      if (!convexReady) return
+      await deleteTeamMutation({ teamId: teamIdToDelete, sessionToken })
+      try {
+        const r = await bootstrapPreferredCase({ sessionToken })
+        if (r.preferredUploadCaseId) await setCaseScope(r.preferredUploadCaseId)
+      } catch {
+        /* ignore */
+      }
+      if (
+        teamsWithCases?.some(
+          (tw) =>
+            tw.team._id === teamIdToDelete &&
+            tw.cases.some(({ case: c }) => c._id === activeCaseId),
+        )
+      ) {
+        setDocumentId(null)
+        setLocalPdfUrl(undefined)
+      }
+    },
+    [
+      activeCaseId,
+      convexReady,
+      deleteTeamMutation,
+      sessionToken,
+      bootstrapPreferredCase,
+      setCaseScope,
+      teamsWithCases,
+    ],
   )
 
   const createCaseWithDetails = useCallback(
@@ -365,22 +412,17 @@ function MainApp({
       }
 
       try {
-        const name = payload.name.trim()
-        const rosterSourceName =
-          payload.importMembersFromGroupId !== undefined && myTeamsOnly
-            ? myTeamsOnly.find(({ group }) => group._id === payload.importMembersFromGroupId)?.group
-                .name
-            : undefined
+        const trimmed = payload.matterName.trim()
+        if (!trimmed) return
 
-        const groupIdNew = await createGroup({
-          name,
+        const teamIdNew = await createCollaborativeTeam({ name: trimmed, sessionToken })
+        const matterCaseId = await createAdditionalCase({
+          teamId: teamIdNew,
+          name: trimmed,
           sessionToken,
-          kind: 'case',
-          ...(rosterSourceName?.trim()
-            ? { sourceTeamName: rosterSourceName.trim() }
-            : {}),
         })
-        await setGroupScope(groupIdNew)
+
+        await setCaseScope(matterCaseId)
 
         const invite = new Set<string>()
         const selfLower = session.email.trim().toLowerCase()
@@ -388,9 +430,9 @@ function MainApp({
           const t = raw.trim().toLowerCase()
           if (t.includes('@')) invite.add(t)
         }
-        if (payload.importMembersFromGroupId) {
-          const roster = await convex.query(api.groups.listMembers, {
-            groupId: payload.importMembersFromGroupId,
+        if (payload.importMembersFromTeamId) {
+          const roster = await convex.query(api.teams.listMembers, {
+            teamId: payload.importMembersFromTeamId,
             sessionToken,
           })
           for (const m of roster) {
@@ -400,15 +442,15 @@ function MainApp({
         }
 
         for (const target of invite) {
-          await addMember({ groupId: groupIdNew, targetEmail: target, sessionToken })
+          await addMember({ teamId: teamIdNew, targetEmail: target, sessionToken })
         }
 
         let failedPdf = 0
         let firstUploaded: Id<'documents'> | null = null
 
-        if (payload.pdfFiles.length && groupIdNew) {
+        if (payload.pdfFiles.length) {
           for (const file of payload.pdfFiles) {
-            const pid = await uploadPdf(file, groupIdNew, { quiet: true })
+            const pid = await uploadPdf(file, matterCaseId, { quiet: true })
             if (!pid) failedPdf += 1
             else if (!firstUploaded) firstUploaded = pid
           }
@@ -431,48 +473,43 @@ function MainApp({
       addMember,
       convex,
       convexReady,
-      createGroup,
-      myTeamsOnly,
+      createAdditionalCase,
+      createCollaborativeTeam,
       session.email,
       sessionToken,
-      setGroupScope,
+      setCaseScope,
       uploadPdf,
     ],
   )
 
-  const workspaceTitle =
-    activeGroupId === null
-      ? 'Personal workspace'
-      : myGroups?.find(({ group }) => group._id === activeGroupId)?.group.name ?? 'Team workspace'
-
-  const sidebarDocuments = useMemo(() => {
-    if (!convexReady) return undefined
-    if (!accessibleDocs) return undefined
-    let rows = accessibleDocs
-    if (activeGroupId !== null) {
-      rows = rows.filter((d) => d.groupId === activeGroupId)
-    }
-    return rows.map((d) => ({ _id: d._id, name: d.name, createdAt: d.createdAt }))
-  }, [accessibleDocs, activeGroupId, convexReady])
-
-  const thumbnailsCasePanelActive = Boolean(convexReady && activeGroupId !== null)
+  const workspaceTitle = activeCaseMeta
+    ? `${activeCaseMeta.team.name === 'Personal workspace' && activeCaseMeta.team.kind === 'solo' ? 'Personal' : activeCaseMeta.team.name} › ${activeCaseMeta.caseDoc.name}`
+    : 'Case workspace'
 
   const thumbnailsScopeUi = useMemo(() => {
-    if (!myGroups || activeGroupId === null) {
+    if (!activeCaseMeta) {
       return {
-        pdfSectionTitle: 'Shared PDFs',
-        scopeKindLabel: 'Workspace',
+        pdfSectionTitle: 'Matter PDFs',
+        scopeKindLabel: 'Matter',
         allocatedTeamName: null as string | null,
       }
     }
-    const row = myGroups.find(({ group }) => group._id === activeGroupId)
-    const isCase = row?.group.kind === 'case'
     return {
-      pdfSectionTitle: isCase ? 'Case PDFs' : 'Team PDFs',
-      scopeKindLabel: isCase ? 'Case' : 'Team',
-      allocatedTeamName: isCase ? row?.group.sourceTeamName ?? null : null,
+      pdfSectionTitle: 'Matter PDFs',
+      scopeKindLabel: 'Matter',
+      allocatedTeamName: activeCaseMeta.team.kind === 'collab' ? activeCaseMeta.team.name : null,
     }
-  }, [myGroups, activeGroupId])
+  }, [activeCaseMeta])
+
+  const sidebarDocuments = useMemo(() => {
+    if (!convexReady || activeCaseId === null) return undefined
+    if (!accessibleDocs) return undefined
+    return accessibleDocs
+      .filter((d) => d.caseId === activeCaseId)
+      .map((d) => ({ _id: d._id, name: d.name, createdAt: d.createdAt }))
+  }, [accessibleDocs, activeCaseId, convexReady])
+
+  const thumbnailsCasePanelActive = Boolean(convexReady && activeCaseId !== null)
 
   const onRenameDocument = useCallback(
     async (id: Id<'documents'>, name: string) => {
@@ -494,21 +531,25 @@ function MainApp({
     [convexReady, documentId, removeDocument, sessionToken],
   )
 
-  const onCreateGroup = async (e: FormEvent) => {
+  const onCreateCollaborativeTeamSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    const name = newGroupName.trim()
+    const name = newCollaborativeTeamName.trim()
     if (!name || !convexReady) return
-    await createGroup({ name, sessionToken, kind: 'team' })
-    setNewGroupName('')
+    const teamIdRes = await createCollaborativeTeam({ name, sessionToken })
+    const refreshed = await convex.query(api.teams.listTeamsWithCases, { sessionToken })
+    const bundle = refreshed.find((t) => t.team._id === teamIdRes)
+    const defCase = bundle?.cases.find(({ case: c }) => c.isDefault)?.case._id
+    if (defCase) await setCaseScope(defCase)
+    setNewCollaborativeTeamName('')
   }
 
   const onAddMember = async (e: FormEvent) => {
     e.preventDefault()
-    if (!effectiveTeamManagementId || !convexReady) return
+    if (!activeTeamIdForMembers || !convexReady) return
     setMemberFeedback(null)
     try {
       await addMember({
-        groupId: effectiveTeamManagementId,
+        teamId: activeTeamIdForMembers,
         targetEmail: addMemberEmail.trim(),
         sessionToken,
       })
@@ -706,14 +747,14 @@ function MainApp({
         return (
           <SimpleRightPanel
             title="Teams"
-            description="Set where uploads go and invite colleagues. Presence for the open document stays in the Workspace panel."
+            description="Shared teams hold collaborative matters per case. Sidebar uploads attach to whichever matter row is selected."
           />
         )
       case 'cases':
         return (
           <SimpleRightPanel
             title="Cases"
-            description="Matters shown here are separate from Teams—you can reuse a Team roster by name or paste login emails."
+            description="Browse matters across teams—or create a collaborative team plus its first substantive matter."
           />
         )
       case 'archive':
@@ -774,15 +815,14 @@ function MainApp({
         return (
           <CasesPage
             convexReady={convexReady}
-            myCases={myCasesOnly}
-            teamsForRoster={myTeamsOnly}
-            activeGroupId={activeGroupId}
-            onOpenCase={(id) => void openCaseWorkspace(id)}
+            teamsPayload={teamsPayload}
+            activeCaseId={activeCaseId}
+            onOpenCase={(caseId) => void openCaseWorkspace(caseId)}
             onCreateCase={(payload) => void createCaseWithDetails(payload)}
             wizardNonce={caseWizardNonce}
             wizardHandledNonce={caseWizardHandledNonce}
             onWizardConsumedNonce={(nonce) => setCaseWizardHandledNonce(nonce)}
-            onDeleteCase={(groupIdToDelete) => void onDeleteCase(groupIdToDelete)}
+            onDeleteCase={(caseIdDel) => void onDeleteCaseMatter(caseIdDel)}
           />
         )
       case 'team':
@@ -790,27 +830,38 @@ function MainApp({
           <TeamsPage
             convexReady={convexReady}
             userEmail={userEmail}
-            myTeams={myTeamsOnly}
-            uploadScopeCaseName={scopedCaseUploadName}
-            activeGroupId={activeGroupId}
-            onSelectScope={setGroupScope}
-            newGroupName={newGroupName}
-            onNewGroupNameChange={setNewGroupName}
-            onCreateGroup={onCreateGroup}
-            membersForActiveGroup={membersForActiveGroup}
-            isGroupAdmin={Boolean(isTeamGroupAdmin)}
+            teamsPayload={teamsPayload}
+            activeCaseId={activeCaseId}
+            onSelectCase={(caseIdSel) => void setCaseScope(caseIdSel)}
+            newCollaborativeTeamName={newCollaborativeTeamName}
+            onNewCollaborativeTeamNameChange={setNewCollaborativeTeamName}
+            onCreateCollaborativeTeamSubmit={onCreateCollaborativeTeamSubmit}
+            activeTeamForMembersId={activeTeamIdForMembers}
+            membersForActiveTeam={membersForActiveTeam}
+            isTeamAdmin={isTeamAdmin}
             addMemberEmail={addMemberEmail}
             onAddMemberEmailChange={setAddMemberEmail}
             onAddMember={onAddMember}
             memberFeedback={memberFeedback}
             onRemoveMember={(targetEmail) => {
-              if (!effectiveTeamManagementId) return
+              if (!activeTeamIdForMembers) return
               void removeMember({
-                groupId: effectiveTeamManagementId,
+                teamId: activeTeamIdForMembers,
                 targetEmail,
                 sessionToken,
               })
             }}
+            onDeleteTeam={
+              activeTeamIdForMembers &&
+              teamsWithCases?.some(
+                (tw) =>
+                  tw.team._id === activeTeamIdForMembers &&
+                  tw.team.kind === 'collab' &&
+                  tw.role === 'admin',
+              )
+                ? () => void onDeleteCollaborativeTeam(activeTeamIdForMembers)
+                : undefined
+            }
           />
         )
       case 'archive':
@@ -842,31 +893,34 @@ function MainApp({
     onUpdateExemption,
     onMoveBox,
     onDeleteBox,
-    activeGroupId,
-    myCasesOnly,
-    myTeamsOnly,
-    effectiveTeamManagementId,
-    scopedCaseUploadName,
-    membersForActiveGroup,
-    isTeamGroupAdmin,
+    activeCaseId,
+    activeTeamIdForMembers,
+    teamsPayload,
+    teamsWithCases,
+    activeCaseMeta,
+    membersForActiveTeam,
+    isTeamAdmin,
     userEmail,
     displayName,
     session.expiresAt,
-    newGroupName,
+    newCollaborativeTeamName,
     addMemberEmail,
     memberFeedback,
     sessionToken,
-    onCreateGroup,
+    onCreateCollaborativeTeamSubmit,
     onAddMember,
     removeMember,
-    setGroupScope,
+    setCaseScope,
     selectConvexDoc,
     openCaseWorkspace,
     createCaseWithDetails,
-    onDeleteCase,
+    onDeleteCaseMatter,
+    onDeleteCollaborativeTeam,
     caseWizardNonce,
     caseWizardHandledNonce,
     setCaseWizardHandledNonce,
+    convex,
+    createCollaborativeTeam,
   ])
 
   return (
@@ -925,8 +979,9 @@ function App() {
 
   if (!convexReady) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4">
-        <p className="max-w-md text-center text-sm text-amber-800">
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 px-4">
+        <IronCladLogo imgClassName="max-h-[52px]" />
+        <p className="max-w-md text-center text-sm text-amber-800 dark:text-amber-200/90">
           Set <code className="rounded bg-amber-50 px-1">VITE_CONVEX_URL</code> in{' '}
           <code className="rounded bg-amber-50 px-1">.env.local</code> and run{' '}
           <code className="rounded bg-amber-50 px-1">npx convex dev</code>.

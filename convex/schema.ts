@@ -11,27 +11,36 @@ export default defineSchema({
     isActive: v.boolean(),
   }).index("by_active_sort", ["isActive", "sortOrder"]),
 
-  groups: defineTable({
+  teams: defineTable({
     name: v.string(),
-    /** Self-declared email (no verification). */
+    /** Normalized creator email — for solo-kind teams identifies the lone owner roster key. */
     createdBy: v.string(),
     createdAt: v.number(),
-    /** "team" = shared folder/roster only; "case" = matter shown on Cases. Undefined = legacy (treated as team in UI lists). */
-    kind: v.optional(v.union(v.literal("team"), v.literal("case"))),
-    /** When creating a case, optional label for the Team roster copied into editors. */
-    sourceTeamName: v.optional(v.string()),
-  }),
+    /** solo = exactly one implicit workspace per primary user identity; collab = shared teams. */
+    kind: v.union(v.literal("solo"), v.literal("collab")),
+  }).index("by_owner_kind", ["createdBy", "kind"]),
 
-  groupMembers: defineTable({
-    groupId: v.id("groups"),
+  teamMembers: defineTable({
+    teamId: v.id("teams"),
     /** Normalized email */
     userId: v.string(),
     role: v.union(v.literal("admin"), v.literal("member")),
     joinedAt: v.number(),
   })
-    .index("by_group", ["groupId"])
+    .index("by_team", ["teamId"])
     .index("by_user", ["userId"])
-    .index("by_group_and_user", ["groupId", "userId"]),
+    .index("by_team_and_user", ["teamId", "userId"]),
+
+  cases: defineTable({
+    teamId: v.id("teams"),
+    name: v.string(),
+    createdBy: v.string(),
+    createdAt: v.number(),
+    /** Only one row per team with isDefault=true (enforced by mutation logic). */
+    isDefault: v.boolean(),
+  })
+    .index("by_team", ["teamId"])
+    .index("by_team_default", ["teamId", "isDefault"]),
 
   documents: defineTable({
     storageId: v.id("_storage"),
@@ -39,12 +48,11 @@ export default defineSchema({
     /** Self-declared email (no verification). */
     createdBy: v.optional(v.string()),
     createdAt: v.number(),
-    /** Set when the document is shared with everyone in this group. */
-    groupId: v.optional(v.id("groups")),
+    caseId: v.id("cases"),
   })
     .index("by_createdAt", ["createdAt"])
     .index("by_createdBy", ["createdBy"])
-    .index("by_group", ["groupId"])
+    .index("by_case", ["caseId"])
     .index("by_storageId", ["storageId"]),
 
   redactionBoxes: defineTable({
@@ -105,7 +113,7 @@ export default defineSchema({
     email: v.string(),
     /** Shown in the UI and sent with presence heartbeats; optional. */
     displayName: v.optional(v.string()),
-    preferredUploadGroupId: v.optional(v.id("groups")),
+    preferredUploadCaseId: v.optional(v.id("cases")),
     createdAt: v.number(),
     expiresAt: v.number(),
   })
