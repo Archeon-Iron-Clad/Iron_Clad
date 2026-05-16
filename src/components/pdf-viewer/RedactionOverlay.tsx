@@ -4,6 +4,7 @@ import { exemptionLabelForBox } from '../../types/redaction'
 
 export type OverlayBox = NormalizedRect & {
   id: string
+  pageNumber?: number
   status: 'draft' | 'locked'
   userId: string
   exemptionShortCodeSnapshot?: string
@@ -12,12 +13,17 @@ export type OverlayBox = NormalizedRect & {
 
 type Props = {
   boxes: OverlayBox[]
+  /** Only boxes for this PDF page are shown. */
+  currentPage: number
 }
 
-export function RedactionOverlay({ boxes }: Props) {
+export function RedactionOverlay({ boxes, currentPage }: Props) {
+  const visible = boxes.filter(
+    (box) => box.pageNumber === undefined || box.pageNumber === currentPage,
+  )
   return (
     <div className="pointer-events-none absolute inset-0">
-      {boxes.map((box) => {
+      {visible.map((box) => {
         const style = normalizedToPixelOverlay(box)
         const locked = box.status === 'locked'
         const label = exemptionLabelForBox(box)

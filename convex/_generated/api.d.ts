@@ -10,7 +10,9 @@
 
 import type * as documents from "../documents.js";
 import type * as exemptionCodes from "../exemptionCodes.js";
+import type * as groups from "../groups.js";
 import type * as http from "../http.js";
+import type * as lib_access from "../lib/access.js";
 import type * as presence from "../presence.js";
 import type * as redactions from "../redactions.js";
 
@@ -23,7 +25,9 @@ import type {
 declare const fullApi: ApiFromModules<{
   documents: typeof documents;
   exemptionCodes: typeof exemptionCodes;
+  groups: typeof groups;
   http: typeof http;
+  "lib/access": typeof lib_access;
   presence: typeof presence;
   redactions: typeof redactions;
 }>;

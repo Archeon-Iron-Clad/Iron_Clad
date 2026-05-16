@@ -1,14 +1,14 @@
 import { v } from "convex/values";
 import { resolveExemptionForBox } from "./exemptionCodes";
 import { mutation, query } from "./_generated/server";
-
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
+import { normalizeEmail, requireDocumentAccess } from "./lib/access";
 
 export const listByDocument = query({
-  args: { documentId: v.id("documents") },
-  handler: async (ctx, { documentId }) => {
+  args: { documentId: v.id("documents"), userEmail: v.string() },
+  handler: async (ctx, { documentId, userEmail }) => {
+    const u = normalizeEmail(userEmail);
+    if (!u.includes("@")) throw new Error("Invalid email");
+    await requireDocumentAccess(ctx, u, documentId);
     return await ctx.db
       .query("redactionBoxes")
       .withIndex("by_document", (q) => q.eq("documentId", documentId))
@@ -33,6 +33,8 @@ export const createBox = mutation({
     if (!userId.includes("@")) {
       throw new Error("Invalid email");
     }
+    await requireDocumentAccess(ctx, userId, args.documentId);
+
     const now = Date.now();
     const exemption = args.exemptionCodeId
       ? await resolveExemptionForBox(ctx, args.exemptionCodeId)
@@ -72,7 +74,9 @@ export const updateBox = mutation({
 
     const userId = normalizeEmail(userEmail);
     const box = await ctx.db.get(boxId);
-    if (!box || box.userId !== userId) {
+    if (!box) throw new Error("Not found");
+    await requireDocumentAccess(ctx, userId, box.documentId);
+    if (box.userId !== userId) {
       throw new Error("Forbidden");
     }
 
@@ -101,7 +105,9 @@ export const deleteBox = mutation({
   handler: async (ctx, { boxId, userEmail }) => {
     const userId = normalizeEmail(userEmail);
     const box = await ctx.db.get(boxId);
-    if (!box || box.userId !== userId) {
+    if (!box) throw new Error("Not found");
+    await requireDocumentAccess(ctx, userId, box.documentId);
+    if (box.userId !== userId) {
       throw new Error("Forbidden");
     }
     await ctx.db.delete(boxId);

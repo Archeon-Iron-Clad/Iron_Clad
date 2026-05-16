@@ -5,8 +5,16 @@ export const api = {
   documents: {
     create: makeFunctionReference<'mutation'>('documents:create'),
     get: makeFunctionReference<'query'>('documents:get'),
+    listAccessible: makeFunctionReference<'query'>('documents:listAccessible'),
     generateUploadUrl: makeFunctionReference<'mutation'>('documents:generateUploadUrl'),
     getFileUrl: makeFunctionReference<'query'>('documents:getFileUrl'),
+  },
+  groups: {
+    create: makeFunctionReference<'mutation'>('groups:create'),
+    listMyGroups: makeFunctionReference<'query'>('groups:listMyGroups'),
+    listMembers: makeFunctionReference<'query'>('groups:listMembers'),
+    addMember: makeFunctionReference<'mutation'>('groups:addMember'),
+    removeMember: makeFunctionReference<'mutation'>('groups:removeMember'),
   },
   exemptionCodes: {
     list: makeFunctionReference<'query'>('exemptionCodes:list'),

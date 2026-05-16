@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import { usePdfDocument } from '../../lib/hooks/usePdfDocument'
+import type { OverlayBox } from './RedactionOverlay'
 import { PdfPageCanvas } from './PdfPageCanvas'
 import { PageNavigator } from './PageNavigator'
 import { RedactionOverlay } from './RedactionOverlay'
 
 type Props = {
   pdfUrl: string | undefined
+  boxes?: OverlayBox[]
 }
 
-export function PdfViewer({ pdfUrl }: Props) {
+export function PdfViewer({ pdfUrl, boxes = [] }: Props) {
   const { pdf, error, loading } = usePdfDocument(pdfUrl)
   const [page, setPage] = useState(1)
 
@@ -29,7 +31,7 @@ export function PdfViewer({ pdfUrl }: Props) {
       <div className="overflow-auto rounded-lg border border-zinc-200 bg-zinc-50 p-4">
         <div className="relative inline-block">
           <PdfPageCanvas pdf={pdf} pageNumber={page} />
-          <RedactionOverlay boxes={[]} />
+          <RedactionOverlay boxes={boxes} currentPage={page} />
         </div>
       </div>
     </div>

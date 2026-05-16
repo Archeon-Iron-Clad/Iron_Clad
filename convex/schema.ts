@@ -11,13 +11,37 @@ export default defineSchema({
     isActive: v.boolean(),
   }).index("by_active_sort", ["isActive", "sortOrder"]),
 
+  groups: defineTable({
+    name: v.string(),
+    /** Self-declared email (no verification). */
+    createdBy: v.string(),
+    createdAt: v.number(),
+  }),
+
+  groupMembers: defineTable({
+    groupId: v.id("groups"),
+    /** Normalized email */
+    userId: v.string(),
+    role: v.union(v.literal("admin"), v.literal("member")),
+    joinedAt: v.number(),
+  })
+    .index("by_group", ["groupId"])
+    .index("by_user", ["userId"])
+    .index("by_group_and_user", ["groupId", "userId"]),
+
   documents: defineTable({
     storageId: v.id("_storage"),
     name: v.string(),
     /** Self-declared email (no verification). */
     createdBy: v.optional(v.string()),
     createdAt: v.number(),
-  }).index("by_createdAt", ["createdAt"]),
+    /** Set when the document is shared with everyone in this group. */
+    groupId: v.optional(v.id("groups")),
+  })
+    .index("by_createdAt", ["createdAt"])
+    .index("by_createdBy", ["createdBy"])
+    .index("by_group", ["groupId"])
+    .index("by_storageId", ["storageId"]),
 
   redactionBoxes: defineTable({
     documentId: v.id("documents"),

@@ -1,11 +1,8 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { normalizeEmail, requireDocumentAccess } from "./lib/access";
 
 const PRESENCE_STALE_MS = 60_000;
-
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
-}
 
 export const heartbeat = mutation({
   args: {
@@ -18,6 +15,9 @@ export const heartbeat = mutation({
     const userId = normalizeEmail(args.userEmail);
     if (!userId.includes("@")) {
       throw new Error("Invalid email");
+    }
+    if (args.documentId !== undefined) {
+      await requireDocumentAccess(ctx, userId, args.documentId);
     }
     const now = Date.now();
     const existing = await ctx.db
@@ -60,13 +60,17 @@ export const leaveDocument = mutation({
 });
 
 export const listPresentInDocument = query({
-  args: { documentId: v.id("documents") },
-  handler: async (ctx, { documentId }) => {
+  args: { documentId: v.id("documents"), userEmail: v.string() },
+  handler: async (ctx, { documentId, userEmail }) => {
+    const u = normalizeEmail(userEmail);
+    if (!u.includes("@")) throw new Error("Invalid email");
+    await requireDocumentAccess(ctx, u, documentId);
+
     const now = Date.now();
     const rows = await ctx.db
       .query("presencePeers")
       .withIndex("by_document_lastSeen", (q) => q.eq("documentId", documentId))
       .collect();
-    return rows.filter((u) => now - u.lastSeen < PRESENCE_STALE_MS);
+    return rows.filter((peer) => now - peer.lastSeen < PRESENCE_STALE_MS);
   },
 });
