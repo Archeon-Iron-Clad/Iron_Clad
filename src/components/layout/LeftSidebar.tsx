@@ -26,6 +26,15 @@ type Props = {
   workspaceSubtitle?: string
   /** Short label in the badge (e.g. doc count or initials). */
   badgeLabel: string
+  onAddCase?: () => void
+  onOpenCreateCaseWizard?: () => void
+  convexReady?: boolean
+  /** Scoped team workspace: sidebar lists group PDFs and multi-upload. */
+  thumbnailsCasePanelActive?: boolean
+  thumbnailsCaseName?: string
+  onAddThumbnailsDocument?: () => void
+  thumbnailsAddDocumentBusy?: boolean
+  thumbnailsAddDocumentDisabled?: boolean
 }
 
 function DarkModeFooterButton() {
@@ -65,6 +74,14 @@ export function LeftSidebar({
   workspaceTitle,
   workspaceSubtitle = 'Workspace',
   badgeLabel,
+  onAddCase,
+  onOpenCreateCaseWizard,
+  convexReady = false,
+  thumbnailsCasePanelActive = false,
+  thumbnailsCaseName,
+  onAddThumbnailsDocument,
+  thumbnailsAddDocumentBusy,
+  thumbnailsAddDocumentDisabled,
 }: Props) {
   const [renamingId, setRenamingId] = useState<Id<'documents'> | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -100,8 +117,31 @@ export function LeftSidebar({
           className="mt-4 flex w-full items-center justify-center gap-2 rounded bg-secondary py-2 text-xs font-semibold text-on-secondary transition-all hover:opacity-90 disabled:opacity-60"
         >
           <Icon name="add" size={18} />
-          {uploading ? 'Uploading…' : 'Add Document'}
+          {uploading ? 'Uploading…' : thumbnailsCasePanelActive ? 'Add one PDF…' : 'Add Document'}
         </button>
+
+        {(convexReady && (onAddCase || onOpenCreateCaseWizard)) ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {onOpenCreateCaseWizard ? (
+              <button
+                type="button"
+                onClick={onOpenCreateCaseWizard}
+                className="flex-1 rounded border border-outline-variant px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-secondary hover:bg-surface-container-high"
+              >
+                Create case…
+              </button>
+            ) : null}
+            {onAddCase ? (
+              <button
+                type="button"
+                onClick={onAddCase}
+                className="flex-1 rounded border border-outline-variant px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant hover:bg-surface-container-high"
+              >
+                Cases
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <nav className="flex-1 py-2">
@@ -129,7 +169,108 @@ export function LeftSidebar({
           ))}
         </ul>
 
-        {documents && documents.length > 0 && (
+        {thumbnailsCasePanelActive && (
+          <div className="mt-4 border-t border-outline-variant px-3 pt-3">
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+              Case PDFs
+            </p>
+            {thumbnailsCaseName ? (
+              <p className="mb-3 truncate text-xs font-semibold text-on-surface" title={thumbnailsCaseName}>
+                {thumbnailsCaseName}
+              </p>
+            ) : null}
+            <button
+              type="button"
+              onClick={onAddThumbnailsDocument}
+              disabled={
+                thumbnailsAddDocumentDisabled ??
+                thumbnailsAddDocumentBusy ??
+                !onAddThumbnailsDocument
+              }
+              className="mb-3 flex w-full items-center justify-center gap-2 rounded border border-dashed border-outline-variant py-2 text-[11px] font-semibold text-secondary transition-colors hover:border-secondary hover:bg-surface-container-low disabled:opacity-50"
+            >
+              <Icon name="upload_file" size={16} />
+              {thumbnailsAddDocumentBusy ? 'Uploading PDFs…' : 'Add multiple PDFs…'}
+            </button>
+            {documents && documents.length === 0 ? (
+              <p className="text-[11px] text-on-surface-variant">No PDFs in this case yet.</p>
+            ) : null}
+            <ul className="space-y-1">
+              {(documents ?? []).map((doc) => (
+                <li key={doc._id}>
+                  {renamingId === doc._id ? (
+                    <input
+                      type="text"
+                      autoFocus
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onBlur={() => commitRename(doc._id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitRename(doc._id)
+                        if (e.key === 'Escape') {
+                          setRenamingId(null)
+                          setRenameValue('')
+                        }
+                      }}
+                      className="w-full rounded border border-outline-variant bg-surface px-2 py-1 text-xs"
+                    />
+                  ) : (
+                    <div
+                      className={`group flex items-center gap-1 rounded px-1 py-0.5 ${
+                        activeDocumentId === doc._id ? 'bg-secondary-container' : 'hover:bg-surface-container-high'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onSelectDocument(doc._id)}
+                        className={`min-w-0 flex-1 truncate py-1 text-left text-xs ${
+                          activeDocumentId === doc._id
+                            ? 'font-semibold text-on-secondary-container'
+                            : 'text-on-surface-variant'
+                        }`}
+                        title={doc.name}
+                      >
+                        {doc.name}
+                      </button>
+                      {onRenameDocument && (
+                        <button
+                          type="button"
+                          title="Rename document"
+                          aria-label={`Rename ${doc.name}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            startRename(doc)
+                          }}
+                          className="rounded p-1 text-on-surface-variant opacity-0 transition-opacity hover:bg-surface-container-high group-hover:opacity-100"
+                        >
+                          <Icon name="edit" size={16} />
+                        </button>
+                      )}
+                      {onDeleteDocument && (
+                        <button
+                          type="button"
+                          title="Delete document"
+                          aria-label={`Delete ${doc.name}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (window.confirm(`Delete "${doc.name}"? This cannot be undone.`)) {
+                              onDeleteDocument(doc._id)
+                            }
+                          }}
+                          className="rounded p-1 text-error opacity-0 transition-opacity hover:bg-error-container group-hover:opacity-100"
+                        >
+                          <Icon name="delete" size={16} />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {!thumbnailsCasePanelActive && documents && documents.length > 0 && (
           <div className="mt-4 border-t border-outline-variant px-3 pt-3">
             <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
               Case files

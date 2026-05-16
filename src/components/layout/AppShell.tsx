@@ -30,6 +30,14 @@ type Props = {
   onTopBarSettingsClick?: () => void
   userInitials: string
   mainNotice?: ReactNode
+  onAddCase?: () => void
+  onOpenCreateCaseWizard?: () => void
+  convexReady?: boolean
+  thumbnailsCasePanelActive?: boolean
+  thumbnailsCaseName?: string
+  onAddThumbnailsDocument?: () => void
+  thumbnailsAddDocumentBusy?: boolean
+  thumbnailsAddDocumentDisabled?: boolean
 }
 
 export function AppShell({
@@ -54,6 +62,14 @@ export function AppShell({
   onTopBarSettingsClick,
   userInitials,
   mainNotice,
+  onAddCase,
+  onOpenCreateCaseWizard,
+  convexReady = false,
+  thumbnailsCasePanelActive = false,
+  thumbnailsCaseName,
+  onAddThumbnailsDocument,
+  thumbnailsAddDocumentBusy,
+  thumbnailsAddDocumentDisabled,
 }: Props) {
   const activeTopNav = topNavForRoute(route)
   const activeSideNav = sideNavForRoute(route)
@@ -86,6 +102,14 @@ export function AppShell({
         workspaceTitle={workspaceTitle}
         workspaceSubtitle={workspaceSubtitle}
         badgeLabel={badgeLabel}
+        onAddCase={onAddCase}
+        onOpenCreateCaseWizard={onOpenCreateCaseWizard}
+        convexReady={convexReady}
+        thumbnailsCasePanelActive={thumbnailsCasePanelActive}
+        thumbnailsCaseName={thumbnailsCaseName}
+        onAddThumbnailsDocument={onAddThumbnailsDocument}
+        thumbnailsAddDocumentBusy={thumbnailsAddDocumentBusy}
+        thumbnailsAddDocumentDisabled={thumbnailsAddDocumentDisabled}
       />
       {rightPanel}
       <main className="fixed bottom-0 left-64 right-80 top-14 overflow-auto bg-surface-dim p-gutter">

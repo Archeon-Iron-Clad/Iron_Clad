@@ -10,9 +10,23 @@ export function useDocumentUpload(sessionToken: string, groupId: Id<'groups'> | 
   const [error, setError] = useState<string | null>(null)
 
   const uploadPdf = useCallback(
-    async (file: File): Promise<Id<'documents'> | null> => {
-      setUploading(true)
-      setError(null)
+    async (
+      file: File,
+      documentGroupId?: Id<'groups'> | null,
+      options?: { quiet?: boolean },
+    ): Promise<Id<'documents'> | null> => {
+      let resolved: Id<'groups'> | undefined
+      if (documentGroupId !== undefined) {
+        resolved = documentGroupId === null ? undefined : documentGroupId
+      } else {
+        resolved = groupId ?? undefined
+      }
+
+      const quiet = options?.quiet ?? false
+      if (!quiet) {
+        setUploading(true)
+        setError(null)
+      }
       try {
         const postUrl = await generateUploadUrl({ sessionToken })
         const result = await fetch(postUrl, {
@@ -26,14 +40,14 @@ export function useDocumentUpload(sessionToken: string, groupId: Id<'groups'> | 
           storageId,
           name: file.name,
           sessionToken,
-          groupId: groupId ?? undefined,
+          groupId: resolved,
         })
         return documentId
       } catch (e) {
-        setError(e instanceof Error ? e.message : 'Upload failed')
+        if (!quiet) setError(e instanceof Error ? e.message : 'Upload failed')
         return null
       } finally {
-        setUploading(false)
+        if (!quiet) setUploading(false)
       }
     },
     [createDocument, generateUploadUrl, sessionToken, groupId],

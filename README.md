@@ -27,7 +27,7 @@ Real-time collaborative **visual** PDF redaction for a 24-hour buildathon: PDF.j
    npx convex dev
    ```
 
-3. Copy `.env.example` to `.env.local` and set `VITE_CONVEX_URL` to the **Vite / client** URL Convex prints (not the dashboard URL).
+3. Copy `.env.example` to `.env.local` and set `VITE_CONVEX_URL` to the **Vite / client** URL Convex prints (not the dashboard URL). If your URL targets **production** Convex, deploy server-side changes after you pull new code (`npx convex deploy` — confirm prod when prompted). Using only `npx convex dev` updates the **dev** deployment only.
 
 4. Run the app:
 

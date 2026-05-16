@@ -147,3 +147,50 @@ export const removeMember = mutation({
     await ctx.db.delete(targetRow._id);
   },
 });
+
+/** Lead-only: removes the group, memberships, linked documents (storage + boxes + presence), redactions. */
+export const deleteGroup = mutation({
+  args: {
+    groupId: v.id("groups"),
+    userEmail: v.string(),
+  },
+  handler: async (ctx, { groupId, userEmail }) => {
+    const actor = normalizeEmail(userEmail);
+    if (!actor.includes("@")) throw new Error("Invalid email");
+    await requireAdmin(ctx, groupId, actor);
+
+    const docs = await ctx.db
+      .query("documents")
+      .withIndex("by_group", (q) => q.eq("groupId", groupId))
+      .collect();
+
+    for (const doc of docs) {
+      const boxes = await ctx.db
+        .query("redactionBoxes")
+        .withIndex("by_document", (q) => q.eq("documentId", doc._id))
+        .collect();
+      for (const b of boxes) {
+        await ctx.db.delete(b._id);
+      }
+      const peers = await ctx.db
+        .query("presencePeers")
+        .withIndex("by_document_lastSeen", (q) => q.eq("documentId", doc._id))
+        .collect();
+      for (const p of peers) {
+        await ctx.db.delete(p._id);
+      }
+      await ctx.storage.delete(doc.storageId);
+      await ctx.db.delete(doc._id);
+    }
+
+    const members = await ctx.db
+      .query("groupMembers")
+      .withIndex("by_group", (q) => q.eq("groupId", groupId))
+      .collect();
+    for (const m of members) {
+      await ctx.db.delete(m._id);
+    }
+
+    await ctx.db.delete(groupId);
+  },
+});

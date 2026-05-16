@@ -1,5 +1,12 @@
-import { useMutation, useQuery } from 'convex/react'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useConvex, useMutation, useQuery } from 'convex/react'
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react'
 import { api } from '../convex/_generated/api'
 import type { Id } from '../convex/_generated/dataModel'
 import { EmailGate } from './components/auth/EmailGate'
@@ -20,6 +27,7 @@ import { ConflictsPage } from './pages/ConflictsPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TeamsPage } from './pages/TeamsPage'
+import { CasesPage, type CreateCasePayload } from './pages/CasesPage'
 import { WorkspacePage } from './pages/WorkspacePage'
 import { toRedactionExportBox } from './types/redaction'
 
@@ -66,6 +74,7 @@ function MainApp({
   sessionToken: string
   session: SessionPayload
 }) {
+  const convex = useConvex()
   const userEmail = session.email
   const activeGroupId = session.preferredUploadGroupId
 
@@ -76,7 +85,14 @@ function MainApp({
   const [addMemberEmail, setAddMemberEmail] = useState('')
   const [memberFeedback, setMemberFeedback] = useState<string | null>(null)
 
+  /** Bump when sidebar opens the create-case wizard (CasesPage listens). */
+  const [wizardNonce, setWizardNonce] = useState(0)
+  const [wizardHandledNonce, setWizardHandledNonce] = useState(0)
+  const [bulkSidebarNotice, setBulkSidebarNotice] = useState<string | null>(null)
+  const [bulkSidebarBusy, setBulkSidebarBusy] = useState(false)
+
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const thumbnailsInputRef = useRef<HTMLInputElement>(null)
   const convexReady = isConvexConfigured()
 
   const myGroups = useQuery(api.groups.listMyGroups, convexReady ? { sessionToken } : 'skip')
@@ -116,6 +132,7 @@ function MainApp({
   const deleteBox = useMutation(api.redactions.deleteBox)
   const renameDocument = useMutation(api.documents.rename)
   const removeDocument = useMutation(api.documents.removeDocument)
+  const deleteGroupMutation = useMutation(api.groups.deleteGroup)
 
   const { uploadPdf, uploading, error: uploadError } = useDocumentUpload(
     sessionToken,
@@ -192,10 +209,139 @@ function MainApp({
     }
   }
 
-  const selectConvexDoc = (id: Id<'documents'>) => {
-    setDocumentId(id)
-    setLocalPdfUrl(undefined)
-    setRoute('workspace')
+  const onSidebarBulkPdfFiles = async (f: FileList | null, inputReset: () => void) => {
+    const list = f ? Array.from(f) : []
+    if (!list.length || !convexReady || activeGroupId === null) {
+      inputReset()
+      return
+    }
+
+    let failed = 0
+    let firstNew: Id<'documents'> | null = null
+
+    setBulkSidebarBusy(true)
+    setBulkSidebarNotice(null)
+    try {
+      for (const file of list) {
+        if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) continue
+        const id = await uploadPdf(file, activeGroupId, { quiet: true })
+        if (!id) failed += 1
+        else if (!firstNew) firstNew = id
+      }
+
+      setBulkSidebarNotice(
+        failed ? `${failed} file(s) failed to upload. Check your Convex connection.` : null,
+      )
+
+      if (firstNew) {
+        setDocumentId(firstNew)
+        setLocalPdfUrl(undefined)
+        setRoute('workspace')
+      }
+    } finally {
+      setBulkSidebarBusy(false)
+      inputReset()
+    }
+  }
+
+  const selectConvexDoc = useCallback(
+    async (id: Id<'documents'>) => {
+      const row = accessibleDocs?.find((d) => d._id === id)
+      if (row?.groupId) await setGroupScope(row.groupId)
+      setDocumentId(id)
+      setLocalPdfUrl(undefined)
+      setRoute('workspace')
+    },
+    [accessibleDocs, setGroupScope],
+  )
+
+  const openCaseWorkspace = useCallback(
+    async (id: Id<'groups'>) => {
+      await setGroupScope(id)
+      setRoute('workspace')
+    },
+    [setGroupScope],
+  )
+
+  const onDeleteCase = useCallback(
+    async (groupIdToDelete: Id<'groups'>) => {
+      if (!convexReady) return
+      await deleteGroupMutation({ groupId: groupIdToDelete, userEmail: session.email })
+      if (activeGroupId === groupIdToDelete) {
+        await setGroupScope(null)
+        setDocumentId(null)
+        setLocalPdfUrl(undefined)
+      }
+    },
+    [activeGroupId, convexReady, deleteGroupMutation, session.email, setGroupScope],
+  )
+
+  const createCaseWithDetails = useCallback(
+    async (payload: CreateCasePayload) => {
+      if (!convexReady) return
+
+      const name = payload.name.trim()
+      const groupIdNew = await createGroup({ name, sessionToken })
+      await setGroupScope(groupIdNew)
+
+      const invite = new Set<string>()
+      const selfLower = session.email.trim().toLowerCase()
+      for (const raw of payload.memberEmails) {
+        const t = raw.trim().toLowerCase()
+        if (t.includes('@')) invite.add(t)
+      }
+      if (payload.importMembersFromGroupId) {
+        const roster = await convex.query(api.groups.listMembers, {
+          groupId: payload.importMembersFromGroupId,
+          sessionToken,
+        })
+        for (const m of roster) {
+          const e = String(m.userId).trim().toLowerCase()
+          if (e && e.includes('@') && e !== selfLower) invite.add(e)
+        }
+      }
+
+      for (const target of invite) {
+        await addMember({ groupId: groupIdNew, targetEmail: target, sessionToken })
+      }
+
+      let failedPdf = 0
+      let firstUploaded: Id<'documents'> | null = null
+
+      if (payload.pdfFiles.length && groupIdNew) {
+        for (const file of payload.pdfFiles) {
+          const pid = await uploadPdf(file, groupIdNew, { quiet: true })
+          if (!pid) failedPdf += 1
+          else if (!firstUploaded) firstUploaded = pid
+        }
+      }
+
+      if (failedPdf > 0) {
+        window.alert(`${failedPdf} PDF(s) failed to attach. Others may have succeeded—check the sidebar.`)
+      }
+
+      if (firstUploaded) {
+        setDocumentId(firstUploaded)
+        setLocalPdfUrl(undefined)
+      }
+      setRoute('workspace')
+    },
+    [
+      addMember,
+      convex,
+      convexReady,
+      createGroup,
+      session.email,
+      sessionToken,
+      setGroupScope,
+      uploadPdf,
+    ],
+  )
+
+  const bumpCaseWizardNonce = () => setWizardNonce((n) => n + 1)
+  const openCasesWithWizard = () => {
+    setRoute('cases')
+    bumpCaseWizardNonce()
   }
 
   const workspaceTitle =
@@ -203,7 +349,18 @@ function MainApp({
       ? 'Personal workspace'
       : myGroups?.find(({ group }) => group._id === activeGroupId)?.group.name ?? 'Team workspace'
 
-  const sidebarBadgeLabel = String(accessibleDocs?.length ?? 0)
+  const sidebarDocuments = useMemo(() => {
+    if (!convexReady) return undefined
+    if (!accessibleDocs) return undefined
+    let rows = accessibleDocs
+    if (activeGroupId !== null) {
+      rows = rows.filter((d) => d.groupId === activeGroupId)
+    }
+    return rows.map((d) => ({ _id: d._id, name: d.name, createdAt: d.createdAt }))
+  }, [accessibleDocs, activeGroupId, convexReady])
+
+  const sidebarBadgeLabel = String(sidebarDocuments?.length ?? accessibleDocs?.length ?? 0)
+  const thumbnailsCasePanelActive = Boolean(convexReady && activeGroupId !== null)
 
   const onRenameDocument = useCallback(
     async (id: Id<'documents'>, name: string) => {
@@ -225,7 +382,7 @@ function MainApp({
     [convexReady, documentId, removeDocument, sessionToken],
   )
 
-  const onCreateGroup = async (e: React.FormEvent) => {
+  const onCreateGroup = async (e: FormEvent) => {
     e.preventDefault()
     const name = newGroupName.trim()
     if (!name || !convexReady) return
@@ -233,7 +390,7 @@ function MainApp({
     setNewGroupName('')
   }
 
-  const onAddMember = async (e: React.FormEvent) => {
+  const onAddMember = async (e: FormEvent) => {
     e.preventDefault()
     if (!activeGroupId || !convexReady) return
     setMemberFeedback(null)
@@ -377,6 +534,21 @@ function MainApp({
       </div>
     ) : null
 
+  const sidebarBulkNotice =
+    bulkSidebarNotice !== null ? (
+      <div className="mb-4 rounded border border-secondary-container bg-surface-container-low px-4 py-3 text-sm text-on-secondary-container">
+        {bulkSidebarNotice}
+      </div>
+    ) : null
+
+  const mainNoticeCombined: ReactNode =
+    bulkSidebarNotice === null && uploadError === null ? null : (
+      <>
+        {uploadFailureNotice}
+        {sidebarBulkNotice}
+      </>
+    )
+
   const rightPanel = useMemo(() => {
     switch (route) {
       case 'workspace':
@@ -421,6 +593,13 @@ function MainApp({
           <SimpleRightPanel
             title="Teams"
             description="Set where uploads go and invite colleagues. Presence for the open document stays in the Workspace panel."
+          />
+        )
+      case 'cases':
+        return (
+          <SimpleRightPanel
+            title="Cases"
+            description="Create matters, reuse rosters from other teams, and attach PDFs. Cases map directly to Convex groups."
           />
         )
       case 'archive':
@@ -477,6 +656,20 @@ function MainApp({
         return <AnnotationsPage sessionToken={sessionToken} />
       case 'batch':
         return <BatchPage sessionToken={sessionToken} onOpenDocument={selectConvexDoc} />
+      case 'cases':
+        return (
+          <CasesPage
+            convexReady={convexReady}
+            myGroups={myGroups}
+            activeGroupId={activeGroupId}
+            onOpenCase={(id) => void openCaseWorkspace(id)}
+            onCreateCase={(payload) => void createCaseWithDetails(payload)}
+            wizardNonce={wizardNonce}
+            wizardHandledNonce={wizardHandledNonce}
+            onWizardConsumedNonce={(nonce) => setWizardHandledNonce(nonce)}
+            onDeleteCase={(groupIdToDelete) => void onDeleteCase(groupIdToDelete)}
+          />
+        )
       case 'team':
         return (
           <TeamsPage
@@ -539,7 +732,13 @@ function MainApp({
     onAddMember,
     removeMember,
     setGroupScope,
-    accessibleDocs,
+    wizardNonce,
+    wizardHandledNonce,
+    selectConvexDoc,
+    openCaseWorkspace,
+    createCaseWithDetails,
+    onDeleteCase,
+    setWizardHandledNonce,
   ])
 
   return (
@@ -547,9 +746,9 @@ function MainApp({
       route={route}
       onNavigate={setRoute}
       rightPanel={rightPanel}
-      documents={accessibleDocs}
+      documents={sidebarDocuments}
       activeDocumentId={documentId}
-      onSelectDocument={selectConvexDoc}
+      onSelectDocument={(id) => void selectConvexDoc(id)}
       onRenameDocument={convexReady ? onRenameDocument : undefined}
       onDeleteDocument={convexReady ? onDeleteDocument : undefined}
       onAddDocument={onAddDocument}
@@ -563,7 +762,15 @@ function MainApp({
       exportDisabled={!pdfUrl}
       onTopBarSettingsClick={() => setRoute('settings')}
       userInitials={initialsFromEmail(userEmail)}
-      mainNotice={uploadFailureNotice}
+      mainNotice={mainNoticeCombined}
+      convexReady={convexReady}
+      onOpenCreateCaseWizard={() => openCasesWithWizard()}
+      onAddCase={() => setRoute('cases')}
+      thumbnailsCasePanelActive={thumbnailsCasePanelActive}
+      thumbnailsCaseName={workspaceTitle}
+      onAddThumbnailsDocument={() => thumbnailsInputRef.current?.click()}
+      thumbnailsAddDocumentBusy={bulkSidebarBusy}
+      thumbnailsAddDocumentDisabled={bulkSidebarBusy}
     >
       <input
         ref={fileInputRef}
@@ -571,6 +778,19 @@ function MainApp({
         accept="application/pdf"
         className="hidden"
         onChange={(e) => void onFile(e.target.files)}
+      />
+      <input
+        ref={thumbnailsInputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const input = e.currentTarget
+          void onSidebarBulkPdfFiles(input.files, () => {
+            input.value = ''
+          })
+        }}
       />
       {mainContent}
     </AppShell>
