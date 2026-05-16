@@ -14,7 +14,6 @@ type Props = {
 
 const TOP_LINKS: { id: TopNavId; label: string }[] = [
   { id: 'documents', label: 'Documents' },
-  { id: 'cases', label: 'Cases' },
   { id: 'team', label: 'Teams' },
   { id: 'analytics', label: 'Analytics' },
   { id: 'archive', label: 'Archive' },

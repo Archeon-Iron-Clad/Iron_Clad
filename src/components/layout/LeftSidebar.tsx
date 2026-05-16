@@ -18,17 +18,11 @@ type Props = {
   onSelectDocument: (id: Id<'documents'>) => void
   onRenameDocument?: (id: Id<'documents'>, name: string) => void
   onDeleteDocument?: (id: Id<'documents'>) => void
-  onAddDocument: () => void
-  uploading?: boolean
   draftCount?: number
-  /** Shown in the case header (e.g. team name or "Personal workspace"). */
-  workspaceTitle: string
-  workspaceSubtitle?: string
-  /** Short label in the badge (e.g. doc count or initials). */
-  badgeLabel: string
-  onAddCase?: () => void
-  onOpenCreateCaseWizard?: () => void
-  convexReady?: boolean
+  /** Browse all cases (cases list). */
+  onNavigateToCases?: () => void
+  /** Open cases and start the new-case flow. */
+  onNavigateToCreateCase?: () => void
   /** Scoped team workspace: sidebar lists group PDFs and multi-upload. */
   thumbnailsCasePanelActive?: boolean
   thumbnailsCaseName?: string
@@ -54,7 +48,6 @@ function DarkModeFooterButton() {
 
 const SIDE_ITEMS: { id: SideNavId; icon: string; label: string; iconClass?: string }[] = [
   { id: 'thumbnails', icon: 'grid_view', label: 'Thumbnails' },
-  { id: 'outline', icon: 'format_list_bulleted', label: 'Outline' },
   { id: 'annotations', icon: 'edit_square', label: 'Annotations' },
   { id: 'conflicts', icon: 'warning', label: 'Conflicts', iconClass: 'text-error' },
   { id: 'settings', icon: 'settings_applications', label: 'Settings' },
@@ -68,15 +61,9 @@ export function LeftSidebar({
   onSelectDocument,
   onRenameDocument,
   onDeleteDocument,
-  onAddDocument,
-  uploading,
   draftCount = 0,
-  workspaceTitle,
-  workspaceSubtitle = 'Workspace',
-  badgeLabel,
-  onAddCase,
-  onOpenCreateCaseWizard,
-  convexReady = false,
+  onNavigateToCases,
+  onNavigateToCreateCase,
   thumbnailsCasePanelActive = false,
   thumbnailsCaseName,
   onAddThumbnailsDocument,
@@ -100,48 +87,27 @@ export function LeftSidebar({
 
   return (
     <aside className="fixed left-0 top-14 z-40 flex h-[calc(100vh-3.5rem)] w-64 flex-col overflow-y-auto border-r border-outline-variant bg-surface-bright">
-      <div className="border-b border-outline-variant p-4">
-        <div className="mb-1 flex items-center gap-3">
-          <span className="flex size-8 items-center justify-center rounded border border-outline bg-primary-container text-[10px] font-bold text-on-primary">
-            {badgeLabel.slice(0, 3)}
-          </span>
-          <div>
-            <p className="text-sm font-bold leading-none">{workspaceTitle}</p>
-            <p className="text-[10px] uppercase tracking-wider text-on-surface-variant">{workspaceSubtitle}</p>
-          </div>
-        </div>
+      <div className="space-y-2 border-b border-outline-variant p-4">
         <button
           type="button"
-          onClick={onAddDocument}
-          disabled={uploading}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded bg-secondary py-2 text-xs font-semibold text-on-secondary transition-all hover:opacity-90 disabled:opacity-60"
+          onClick={() => onNavigateToCases?.()}
+          disabled={!onNavigateToCases}
+          className="flex w-full items-center justify-center gap-2 rounded bg-surface-container-low px-4 py-2.5 text-xs font-semibold text-on-surface transition-colors hover:bg-surface-container-high disabled:opacity-40"
+          aria-label="Cases"
         >
-          <Icon name="add" size={18} />
-          {uploading ? 'Uploading…' : thumbnailsCasePanelActive ? 'Add one PDF…' : 'Add Document'}
+          <Icon name="folder" size={18} aria-hidden />
+          Cases
         </button>
-
-        {(convexReady && (onAddCase || onOpenCreateCaseWizard)) ? (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {onOpenCreateCaseWizard ? (
-              <button
-                type="button"
-                onClick={onOpenCreateCaseWizard}
-                className="flex-1 rounded border border-outline-variant px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-secondary hover:bg-surface-container-high"
-              >
-                Create case…
-              </button>
-            ) : null}
-            {onAddCase ? (
-              <button
-                type="button"
-                onClick={onAddCase}
-                className="flex-1 rounded border border-outline-variant px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant hover:bg-surface-container-high"
-              >
-                Cases
-              </button>
-            ) : null}
-          </div>
-        ) : null}
+        <button
+          type="button"
+          onClick={() => onNavigateToCreateCase?.()}
+          disabled={!onNavigateToCreateCase}
+          className="flex w-full items-center justify-center gap-2 rounded bg-secondary px-4 py-2.5 text-xs font-semibold text-on-secondary transition-all hover:opacity-90 disabled:opacity-40"
+          aria-label="Add new case"
+        >
+          <Icon name="add" size={18} aria-hidden />
+          Add Case
+        </button>
       </div>
 
       <nav className="flex-1 py-2">

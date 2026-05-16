@@ -18,21 +18,15 @@ type Props = {
   onSelectDocument: (id: Id<'documents'>) => void
   onRenameDocument?: (id: Id<'documents'>, name: string) => void
   onDeleteDocument?: (id: Id<'documents'>) => void
-  onAddDocument: () => void
-  uploading?: boolean
   draftCount?: number
-  workspaceTitle: string
-  workspaceSubtitle?: string
-  badgeLabel: string
   onExportPreview?: () => void
   onExportRelease?: () => void
   exportDisabled?: boolean
   onTopBarSettingsClick?: () => void
   userInitials: string
   mainNotice?: ReactNode
-  onAddCase?: () => void
-  onOpenCreateCaseWizard?: () => void
-  convexReady?: boolean
+  onNavigateToCases?: () => void
+  onNavigateToCreateCase?: () => void
   thumbnailsCasePanelActive?: boolean
   thumbnailsCaseName?: string
   onAddThumbnailsDocument?: () => void
@@ -50,21 +44,15 @@ export function AppShell({
   onSelectDocument,
   onRenameDocument,
   onDeleteDocument,
-  onAddDocument,
-  uploading,
   draftCount,
-  workspaceTitle,
-  workspaceSubtitle,
-  badgeLabel,
   onExportPreview,
   onExportRelease,
   exportDisabled,
   onTopBarSettingsClick,
   userInitials,
   mainNotice,
-  onAddCase,
-  onOpenCreateCaseWizard,
-  convexReady = false,
+  onNavigateToCases,
+  onNavigateToCreateCase,
   thumbnailsCasePanelActive = false,
   thumbnailsCaseName,
   onAddThumbnailsDocument,
@@ -96,15 +84,9 @@ export function AppShell({
         onSelectDocument={onSelectDocument}
         onRenameDocument={onRenameDocument}
         onDeleteDocument={onDeleteDocument}
-        onAddDocument={onAddDocument}
-        uploading={uploading}
         draftCount={draftCount}
-        workspaceTitle={workspaceTitle}
-        workspaceSubtitle={workspaceSubtitle}
-        badgeLabel={badgeLabel}
-        onAddCase={onAddCase}
-        onOpenCreateCaseWizard={onOpenCreateCaseWizard}
-        convexReady={convexReady}
+        onNavigateToCases={onNavigateToCases}
+        onNavigateToCreateCase={onNavigateToCreateCase}
         thumbnailsCasePanelActive={thumbnailsCasePanelActive}
         thumbnailsCaseName={thumbnailsCaseName}
         onAddThumbnailsDocument={onAddThumbnailsDocument}

@@ -10,12 +10,11 @@ export type AppRoute =
   | 'archive'
   | 'settings'
 
-export type TopNavId = 'documents' | 'cases' | 'team' | 'analytics' | 'archive'
-export type SideNavId = 'thumbnails' | 'outline' | 'annotations' | 'conflicts' | 'settings'
+export type TopNavId = 'documents' | 'team' | 'analytics' | 'archive'
+export type SideNavId = 'thumbnails' | 'annotations' | 'conflicts' | 'settings'
 
 export const TOP_NAV_ROUTES: Record<TopNavId, AppRoute> = {
   documents: 'dashboard',
-  cases: 'cases',
   team: 'team',
   analytics: 'batch',
   archive: 'archive',
@@ -23,7 +22,6 @@ export const TOP_NAV_ROUTES: Record<TopNavId, AppRoute> = {
 
 export const SIDE_NAV_ROUTES: Record<SideNavId, AppRoute> = {
   thumbnails: 'workspace',
-  outline: 'dashboard',
   annotations: 'annotations',
   conflicts: 'conflicts',
   settings: 'settings',

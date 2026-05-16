@@ -85,13 +85,12 @@ function MainApp({
   const [addMemberEmail, setAddMemberEmail] = useState('')
   const [memberFeedback, setMemberFeedback] = useState<string | null>(null)
 
-  /** Bump when sidebar opens the create-case wizard (CasesPage listens). */
-  const [wizardNonce, setWizardNonce] = useState(0)
-  const [wizardHandledNonce, setWizardHandledNonce] = useState(0)
+  const [caseWizardNonce, setCaseWizardNonce] = useState(0)
+  const [caseWizardHandledNonce, setCaseWizardHandledNonce] = useState(0)
+
   const [bulkSidebarNotice, setBulkSidebarNotice] = useState<string | null>(null)
   const [bulkSidebarBusy, setBulkSidebarBusy] = useState(false)
 
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const thumbnailsInputRef = useRef<HTMLInputElement>(null)
   const convexReady = isConvexConfigured()
 
@@ -134,7 +133,7 @@ function MainApp({
   const removeDocument = useMutation(api.documents.removeDocument)
   const deleteGroupMutation = useMutation(api.groups.deleteGroup)
 
-  const { uploadPdf, uploading, error: uploadError } = useDocumentUpload(
+  const { uploadPdf, error: uploadError } = useDocumentUpload(
     sessionToken,
     activeGroupId ?? undefined,
   )
@@ -187,27 +186,6 @@ function MainApp({
     },
     [sessionToken, setPreferredUploadGroup],
   )
-
-  const onAddDocument = () => fileInputRef.current?.click()
-
-  const onFile = async (f: FileList | null) => {
-    const file = f?.[0]
-    if (!file) return
-
-    if (!convexReady) {
-      setLocalPdfUrl(URL.createObjectURL(file))
-      setDocumentId(null)
-      setRoute('workspace')
-      return
-    }
-
-    const id = await uploadPdf(file)
-    if (id) {
-      setDocumentId(id)
-      setLocalPdfUrl(undefined)
-      setRoute('workspace')
-    }
-  }
 
   const onSidebarBulkPdfFiles = async (f: FileList | null, inputReset: () => void) => {
     const list = f ? Array.from(f) : []
@@ -338,12 +316,6 @@ function MainApp({
     ],
   )
 
-  const bumpCaseWizardNonce = () => setWizardNonce((n) => n + 1)
-  const openCasesWithWizard = () => {
-    setRoute('cases')
-    bumpCaseWizardNonce()
-  }
-
   const workspaceTitle =
     activeGroupId === null
       ? 'Personal workspace'
@@ -359,7 +331,6 @@ function MainApp({
     return rows.map((d) => ({ _id: d._id, name: d.name, createdAt: d.createdAt }))
   }, [accessibleDocs, activeGroupId, convexReady])
 
-  const sidebarBadgeLabel = String(sidebarDocuments?.length ?? accessibleDocs?.length ?? 0)
   const thumbnailsCasePanelActive = Boolean(convexReady && activeGroupId !== null)
 
   const onRenameDocument = useCallback(
@@ -664,9 +635,9 @@ function MainApp({
             activeGroupId={activeGroupId}
             onOpenCase={(id) => void openCaseWorkspace(id)}
             onCreateCase={(payload) => void createCaseWithDetails(payload)}
-            wizardNonce={wizardNonce}
-            wizardHandledNonce={wizardHandledNonce}
-            onWizardConsumedNonce={(nonce) => setWizardHandledNonce(nonce)}
+            wizardNonce={caseWizardNonce}
+            wizardHandledNonce={caseWizardHandledNonce}
+            onWizardConsumedNonce={(nonce) => setCaseWizardHandledNonce(nonce)}
             onDeleteCase={(groupIdToDelete) => void onDeleteCase(groupIdToDelete)}
           />
         )
@@ -732,13 +703,13 @@ function MainApp({
     onAddMember,
     removeMember,
     setGroupScope,
-    wizardNonce,
-    wizardHandledNonce,
     selectConvexDoc,
     openCaseWorkspace,
     createCaseWithDetails,
     onDeleteCase,
-    setWizardHandledNonce,
+    caseWizardNonce,
+    caseWizardHandledNonce,
+    setCaseWizardHandledNonce,
   ])
 
   return (
@@ -751,34 +722,24 @@ function MainApp({
       onSelectDocument={(id) => void selectConvexDoc(id)}
       onRenameDocument={convexReady ? onRenameDocument : undefined}
       onDeleteDocument={convexReady ? onDeleteDocument : undefined}
-      onAddDocument={onAddDocument}
-      uploading={uploading}
       draftCount={draftCount}
-      workspaceTitle={workspaceTitle}
-      workspaceSubtitle={userEmail.split('@')[0] ?? userEmail}
-      badgeLabel={sidebarBadgeLabel}
       onExportPreview={pdfUrl ? onExportPreview : undefined}
       onExportRelease={pdfUrl ? onExportRelease : undefined}
       exportDisabled={!pdfUrl}
       onTopBarSettingsClick={() => setRoute('settings')}
       userInitials={initialsFromEmail(userEmail)}
       mainNotice={mainNoticeCombined}
-      convexReady={convexReady}
-      onOpenCreateCaseWizard={() => openCasesWithWizard()}
-      onAddCase={() => setRoute('cases')}
+      onNavigateToCases={() => setRoute('cases')}
+      onNavigateToCreateCase={() => {
+        setRoute('cases')
+        setCaseWizardNonce((n) => n + 1)
+      }}
       thumbnailsCasePanelActive={thumbnailsCasePanelActive}
       thumbnailsCaseName={workspaceTitle}
       onAddThumbnailsDocument={() => thumbnailsInputRef.current?.click()}
       thumbnailsAddDocumentBusy={bulkSidebarBusy}
       thumbnailsAddDocumentDisabled={bulkSidebarBusy}
     >
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="application/pdf"
-        className="hidden"
-        onChange={(e) => void onFile(e.target.files)}
-      />
       <input
         ref={thumbnailsInputRef}
         type="file"
