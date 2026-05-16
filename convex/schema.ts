@@ -48,8 +48,7 @@ export default defineSchema({
     /** Self-declared email (no verification). */
     createdBy: v.optional(v.string()),
     createdAt: v.number(),
-    /** Required for new uploads; optional only until legacy rows are migrated. */
-    caseId: v.optional(v.id("cases")),
+    caseId: v.id("cases"),
   })
     .index("by_createdAt", ["createdAt"])
     .index("by_createdBy", ["createdBy"])

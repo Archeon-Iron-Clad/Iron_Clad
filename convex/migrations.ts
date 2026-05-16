@@ -1,26 +1,53 @@
 import { internalMutation } from "./_generated/server";
-import { ensureSoloTeamAndDefaultCase } from "./lib/workspace";
 
-/** Backfill caseId on documents created before the teams/cases schema. */
-export const migrateLegacyDocuments = internalMutation({
+/**
+ * Wipes workspace data: documents (+ storage blobs), redactions, audit, presence,
+ * cases, teams, and sessions.
+ * Keeps exemption codes — run sign-in flow again afterward.
+ */
+export const wipeAllApplicationData = internalMutation({
   args: {},
   handler: async (ctx) => {
     const docs = await ctx.db.query("documents").collect();
-    let patched = 0;
-    let skipped = 0;
-
+    let storageDeleted = 0;
     for (const doc of docs) {
-      if (doc.caseId) continue;
-      const owner = doc.createdBy?.trim().toLowerCase();
-      if (!owner || !owner.includes("@")) {
-        skipped++;
-        continue;
+      try {
+        await ctx.storage.delete(doc.storageId);
+        storageDeleted++;
+      } catch {
+        /* blob may already be gone */
       }
-      const { defaultCaseId } = await ensureSoloTeamAndDefaultCase(ctx, owner);
-      await ctx.db.patch(doc._id, { caseId: defaultCaseId });
-      patched++;
+      await ctx.db.delete(doc._id);
     }
 
-    return { patched, skipped, total: docs.length };
+    for (const row of await ctx.db.query("redactionBoxes").collect()) {
+      await ctx.db.delete(row._id);
+    }
+    for (const row of await ctx.db.query("documentAuditEvents").collect()) {
+      await ctx.db.delete(row._id);
+    }
+    for (const row of await ctx.db.query("presencePeers").collect()) {
+      await ctx.db.delete(row._id);
+    }
+    for (const row of await ctx.db.query("cases").collect()) {
+      await ctx.db.delete(row._id);
+    }
+    for (const row of await ctx.db.query("teamMembers").collect()) {
+      await ctx.db.delete(row._id);
+    }
+    for (const row of await ctx.db.query("teams").collect()) {
+      await ctx.db.delete(row._id);
+    }
+
+    const sessions = await ctx.db.query("sessions").collect();
+    for (const s of sessions) {
+      await ctx.db.delete(s._id);
+    }
+
+    return {
+      documents: docs.length,
+      storageDeleted,
+      sessions: sessions.length,
+    };
   },
 });
