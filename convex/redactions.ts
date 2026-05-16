@@ -1,9 +1,14 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { mutationGeneric as mutation, queryGeneric as query } from "convex/server";
+import { mutation, query } from "./_generated/server";
 
 export const listByDocument = query({
   args: { documentId: v.id("documents") },
   handler: async (ctx, { documentId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      return [];
+    }
     return await ctx.db
       .query("redactionBoxes")
       .withIndex("by_document", (q) => q.eq("documentId", documentId))
@@ -19,10 +24,13 @@ export const createBox = mutation({
     y: v.number(),
     width: v.number(),
     height: v.number(),
-    userId: v.string(),
     status: v.union(v.literal("draft"), v.literal("locked")),
   },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error("Not authenticated");
+    }
     const now = Date.now();
     return await ctx.db.insert("redactionBoxes", {
       documentId: args.documentId,
@@ -32,7 +40,7 @@ export const createBox = mutation({
       width: args.width,
       height: args.height,
       status: args.status,
-      userId: args.userId,
+      userId,
       updatedAt: now,
     });
   },
@@ -48,6 +56,14 @@ export const updateBox = mutation({
     status: v.optional(v.union(v.literal("draft"), v.literal("locked"))),
   },
   handler: async (ctx, { boxId, ...patch }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error("Not authenticated");
+    }
+    const box = await ctx.db.get(boxId);
+    if (!box || box.userId !== userId) {
+      throw new Error("Forbidden");
+    }
     const updates: Record<string, unknown> = { updatedAt: Date.now() };
     if (patch.x !== undefined) updates.x = patch.x;
     if (patch.y !== undefined) updates.y = patch.y;
@@ -61,6 +77,14 @@ export const updateBox = mutation({
 export const deleteBox = mutation({
   args: { boxId: v.id("redactionBoxes") },
   handler: async (ctx, { boxId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error("Not authenticated");
+    }
+    const box = await ctx.db.get(boxId);
+    if (!box || box.userId !== userId) {
+      throw new Error("Forbidden");
+    }
     await ctx.db.delete(boxId);
   },
 });

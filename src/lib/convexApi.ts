@@ -19,4 +19,7 @@ export const api = {
     leaveDocument: makeFunctionReference<'mutation'>('presence:leaveDocument'),
     listPresentInDocument: makeFunctionReference<'query'>('presence:listPresentInDocument'),
   },
+  profile: {
+    current: makeFunctionReference<'query'>('profile:current'),
+  },
 } as const

@@ -1,18 +1,22 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { mutationGeneric as mutation, queryGeneric as query } from "convex/server";
+import { mutation, query } from "./_generated/server";
 
 export const create = mutation({
   args: {
     storageId: v.id("_storage"),
     name: v.string(),
-    createdBy: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error("Not authenticated");
+    }
     const now = Date.now();
     return await ctx.db.insert("documents", {
       storageId: args.storageId,
       name: args.name,
-      createdBy: args.createdBy,
+      createdBy: userId,
       createdAt: now,
     });
   },
@@ -28,6 +32,10 @@ export const get = query({
 export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error("Not authenticated");
+    }
     return await ctx.storage.generateUploadUrl();
   },
 });

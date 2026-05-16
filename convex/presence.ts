@@ -1,20 +1,24 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
-import { mutationGeneric as mutation, queryGeneric as query } from "convex/server";
+import { mutation, query } from "./_generated/server";
 
 const PRESENCE_STALE_MS = 60_000;
 
 export const heartbeat = mutation({
   args: {
-    userId: v.string(),
     displayName: v.optional(v.string()),
     color: v.optional(v.string()),
     documentId: v.optional(v.id("documents")),
   },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error("Not authenticated");
+    }
     const now = Date.now();
     const existing = await ctx.db
-      .query("users")
-      .withIndex("by_userId", (q) => q.eq("userId", args.userId))
+      .query("presencePeers")
+      .withIndex("by_userId", (q) => q.eq("userId", userId))
       .unique();
 
     if (existing) {
@@ -27,8 +31,8 @@ export const heartbeat = mutation({
       return existing._id;
     }
 
-    return await ctx.db.insert("users", {
-      userId: args.userId,
+    return await ctx.db.insert("presencePeers", {
+      userId,
       displayName: args.displayName,
       color: args.color,
       documentId: args.documentId,
@@ -38,10 +42,14 @@ export const heartbeat = mutation({
 });
 
 export const leaveDocument = mutation({
-  args: { userId: v.string() },
-  handler: async (ctx, { userId }) => {
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error("Not authenticated");
+    }
     const existing = await ctx.db
-      .query("users")
+      .query("presencePeers")
       .withIndex("by_userId", (q) => q.eq("userId", userId))
       .unique();
     if (existing) {
@@ -55,7 +63,7 @@ export const listPresentInDocument = query({
   handler: async (ctx, { documentId }) => {
     const now = Date.now();
     const rows = await ctx.db
-      .query("users")
+      .query("presencePeers")
       .withIndex("by_document_lastSeen", (q) => q.eq("documentId", documentId))
       .collect();
     return rows.filter((u) => now - u.lastSeen < PRESENCE_STALE_MS);
