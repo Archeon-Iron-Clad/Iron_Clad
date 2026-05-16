@@ -1,11 +1,94 @@
 @import "tailwindcss";
 
+@theme {
+  --color-on-tertiary: #ffffff;
+  --color-on-error: #ffffff;
+  --color-tertiary-fixed: #fcdeb5;
+  --color-primary-container: #131b2e;
+  --color-secondary-fixed-dim: #b4c5ff;
+  --color-error-container: #ffdad6;
+  --color-error: #ba1a1a;
+  --color-on-secondary: #ffffff;
+  --color-on-background: #0b1c30;
+  --color-surface-variant: #d3e4fe;
+  --color-surface-container-highest: #d3e4fe;
+  --color-on-surface-variant: #45464d;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #eff4ff;
+  --color-primary: #000000;
+  --color-on-secondary-container: #fefcff;
+  --color-outline-variant: #c6c6cd;
+  --color-surface-bright: #f8f9ff;
+  --color-on-primary-container: #7c839b;
+  --color-surface-container-high: #dce9ff;
+  --color-on-primary: #ffffff;
+  --color-surface-dim: #cbdbf5;
+  --color-secondary-container: #316bf3;
+  --color-surface-container: #e5eeff;
+  --color-on-error-container: #93000a;
+  --color-outline: #76777d;
+  --color-on-surface: #0b1c30;
+  --color-secondary: #0051d5;
+  --color-tertiary-container: #271901;
+  --color-background: #f8f9ff;
+  --color-surface: #f8f9ff;
+  --color-on-primary-fixed: #131b2e;
+  --color-tertiary-fixed-dim: #dec29a;
+
+  --spacing-gutter: 12px;
+  --spacing-margin: 16px;
+
+  --font-sans: "Public Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+@font-face {
+  font-family: "Public Sans";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("https://fonts.gstatic.com/s/publicsans/v20/ijwTs572Xtc6ZYQws9YVwnNDTJzZ.woff2")
+    format("woff2");
+}
+
 body {
   margin: 0;
   min-height: 100vh;
-  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-sans);
+  background-color: var(--color-background);
+  color: var(--color-on-surface);
 }
 
 #root {
   min-height: 100vh;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  display: inline-block;
+  vertical-align: middle;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.material-symbols-filled {
+  font-variation-settings: "FILL" 1, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+
+.redaction-suggested {
+  background: rgba(147, 51, 234, 0.1);
+  border: 2px dashed #9333ea;
+}
+
+.redaction-confirmed {
+  background: #000000;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }

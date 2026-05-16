@@ -1,19 +1,35 @@
 import { useMutation, useQuery } from 'convex/react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { api } from '../convex/_generated/api'
 import type { Id } from '../convex/_generated/dataModel'
 import { AppShell } from './components/layout/AppShell'
+import { AnnotationsRightPanel } from './components/layout/panels/AnnotationsRightPanel'
+import { BatchRightPanel } from './components/layout/panels/BatchRightPanel'
+import { ConflictsRightPanel } from './components/layout/panels/ConflictsRightPanel'
+import { DashboardRightPanel } from './components/layout/panels/DashboardRightPanel'
+import { SimpleRightPanel } from './components/layout/panels/SimpleRightPanel'
+import { WorkspaceRightPanel } from './components/layout/panels/WorkspaceRightPanel'
 import type { OverlayBox } from './components/pdf-viewer/RedactionOverlay'
-import { PdfViewer } from './components/pdf-viewer/PdfViewer'
 import { CollaboratorList } from './components/presence/CollaboratorList'
 import { PresenceBadge } from './components/presence/PresenceBadge'
 import { getStoredActiveGroupId, setStoredActiveGroupId } from './lib/activeGroupId'
 import { isConvexConfigured } from './lib/convexClient'
+import { useDocumentUpload } from './lib/hooks/useDocumentUpload'
+import { usePresenceHeartbeat } from './lib/hooks/usePresenceHeartbeat'
+import { exportRedactedPdf } from './lib/pdf/exportRedactedPdf'
 import {
   clearStoredUserEmail,
   getStoredUserEmail,
   setStoredUserEmail,
 } from './lib/userEmail'
+import type { AppRoute } from './navigation/routes'
+import { AnnotationsPage } from './pages/AnnotationsPage'
+import { BatchPage } from './pages/BatchPage'
+import { ConflictsPage } from './pages/ConflictsPage'
+import { DashboardPage } from './pages/DashboardPage'
+import { PlaceholderPage } from './pages/PlaceholderPage'
+import { WorkspacePage } from './pages/WorkspacePage'
+import { toRedactionExportBox } from './types/redaction'
 
 const DEMO_PDF =
   'https://mozilla.github.io/pdf.js/web/compressed.tracemonkey-pldi-09.pdf'
@@ -25,8 +41,8 @@ function EmailGate() {
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4">
       <p className="max-w-sm text-center text-sm text-zinc-600">
-        Enter your work email to use Iron Clad. No password — we only store this to label your
-        edits (not verified).
+        Enter your work email to use Iron Clad. No password — we only store this to label your edits
+        (not verified).
       </p>
       <form
         className="flex w-full max-w-sm flex-col gap-3"
@@ -74,8 +90,10 @@ function EmailGate() {
 }
 
 function MainApp() {
+  const userEmail = getStoredUserEmail()!
+  const [route, setRoute] = useState<AppRoute>('workspace')
   const [localPdfUrl, setLocalPdfUrl] = useState<string | undefined>(undefined)
-  const [convexDocId, setConvexDocId] = useState<Id<'documents'> | null>(null)
+  const [documentId, setDocumentId] = useState<Id<'documents'> | null>(null)
   const [activeGroupId, setActiveGroupId] = useState<string | null>(() => getStoredActiveGroupId())
   const [newGroupName, setNewGroupName] = useState('')
   const [addMemberEmail, setAddMemberEmail] = useState('')
@@ -83,14 +101,14 @@ function MainApp() {
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const convexReady = isConvexConfigured()
-  const userEmail = getStoredUserEmail()!
+  const gid = activeGroupId !== null ? (activeGroupId as Id<'groups'>) : undefined
 
   const myGroups = useQuery(api.groups.listMyGroups, convexReady ? { userEmail } : 'skip')
   const accessibleDocs = useQuery(api.documents.listAccessible, convexReady ? { userEmail } : 'skip')
 
   const selectedDoc = useQuery(
     api.documents.get,
-    convexReady && convexDocId ? { documentId: convexDocId, userEmail } : 'skip',
+    convexReady && documentId ? { documentId, userEmail } : 'skip',
   )
   const pdfStorageUrl = useQuery(
     api.documents.getFileUrl,
@@ -101,16 +119,12 @@ function MainApp() {
 
   const rawBoxes = useQuery(
     api.redactions.listByDocument,
-    convexReady && convexDocId
-      ? { documentId: convexDocId, userEmail }
-      : 'skip',
+    convexReady && documentId ? { documentId, userEmail } : 'skip',
   )
 
   const presenceRows = useQuery(
     api.presence.listPresentInDocument,
-    convexReady && convexDocId
-      ? { documentId: convexDocId, userEmail }
-      : 'skip',
+    convexReady && documentId ? { documentId, userEmail } : 'skip',
   )
 
   const membersForActiveGroup = useQuery(
@@ -120,92 +134,83 @@ function MainApp() {
       : 'skip',
   )
 
-  const generateUploadUrl = useMutation(api.documents.generateUploadUrl)
-  const createDocument = useMutation(api.documents.create)
   const createGroup = useMutation(api.groups.create)
   const addMember = useMutation(api.groups.addMember)
   const removeMember = useMutation(api.groups.removeMember)
-  const presenceHeartbeat = useMutation(api.presence.heartbeat)
+  const createBox = useMutation(api.redactions.createBox)
+  const updateBox = useMutation(api.redactions.updateBox)
+  const deleteBox = useMutation(api.redactions.deleteBox)
 
-  const overlayBoxes: OverlayBox[] =
-    rawBoxes?.map((b) => ({
-      id: b._id,
-      pageNumber: b.pageNumber,
-      x: b.x,
-      y: b.y,
-      width: b.width,
-      height: b.height,
-      status: b.status,
-      userId: b.userId,
-      exemptionShortCodeSnapshot: b.exemptionShortCodeSnapshot,
-      exemptionTitleSnapshot: b.exemptionTitleSnapshot,
-    })) ?? []
+  const { uploadPdf, uploading, error: uploadError } = useDocumentUpload(userEmail, gid ?? null)
+
+  usePresenceHeartbeat(userEmail, convexReady ? documentId : null)
+
+  const overlayBoxes: OverlayBox[] = useMemo(
+    () =>
+      (rawBoxes ?? []).map((b) => ({
+        id: b._id,
+        pageNumber: b.pageNumber,
+        x: b.x,
+        y: b.y,
+        width: b.width,
+        height: b.height,
+        status: b.status,
+        userId: b.userId,
+        exemptionShortCodeSnapshot: b.exemptionShortCodeSnapshot,
+        exemptionTitleSnapshot: b.exemptionTitleSnapshot,
+      })),
+    [rawBoxes],
+  )
 
   const pdfUrl =
-    convexDocId && pdfStorageUrl !== undefined
-      ? pdfStorageUrl ?? undefined
-      : localPdfUrl
+    documentId && pdfStorageUrl !== undefined ? pdfStorageUrl ?? undefined : localPdfUrl
 
-  const onUploadClick = () => fileInputRef.current?.click()
+  const collaborators = useMemo(
+    () =>
+      (presenceRows ?? [])
+        .filter((p) => p.userId !== userEmail)
+        .map((p) => ({
+          userId: p.userId,
+          displayName: p.displayName,
+          color: p.color,
+        })),
+    [presenceRows, userEmail],
+  )
 
-  useEffect(() => {
-    if (!convexReady || !convexDocId) return
-    presenceHeartbeat({
-      userEmail,
-      documentId: convexDocId,
-    }).catch(() => {})
-    const t = window.setInterval(() => {
-      void presenceHeartbeat({ userEmail, documentId: convexDocId })
-    }, 25_000)
-    return () => window.clearInterval(t)
-  }, [convexDocId, convexReady, presenceHeartbeat, userEmail])
+  const draftCount = overlayBoxes.filter((b) => b.status === 'draft').length
+  const activeGroupMeta = myGroups?.find(({ group }) => group._id === activeGroupId)
+  const isGroupAdmin = activeGroupMeta?.role === 'admin'
+
+  const setGroupScope = (id: string | null) => {
+    setActiveGroupId(id)
+    setStoredActiveGroupId(id)
+  }
+
+  const onAddDocument = () => fileInputRef.current?.click()
 
   const onFile = async (f: FileList | null) => {
     const file = f?.[0]
     if (!file) return
 
     if (!convexReady) {
-      const url = URL.createObjectURL(file)
-      setLocalPdfUrl(url)
-      setConvexDocId(null)
+      setLocalPdfUrl(URL.createObjectURL(file))
+      setDocumentId(null)
+      setRoute('workspace')
       return
     }
 
-    try {
-      const postUrl = await generateUploadUrl({ userEmail })
-      const result = await fetch(postUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': file.type },
-        body: file,
-      })
-      if (!result.ok) throw new Error('Upload failed')
-      const { storageId } = (await result.json()) as { storageId: string }
-
-      const gid = activeGroupId !== null ? (activeGroupId as Id<'groups'>) : undefined
-      const newId = await createDocument({
-        storageId: storageId as Id<'_storage'>,
-        name: file.name,
-        userEmail,
-        groupId: gid,
-      })
-      setConvexDocId(newId)
+    const id = await uploadPdf(file)
+    if (id) {
+      setDocumentId(id)
       setLocalPdfUrl(undefined)
-    } catch (e) {
-      console.error(e)
-      const url = URL.createObjectURL(file)
-      setLocalPdfUrl(url)
-      setConvexDocId(null)
+      setRoute('workspace')
     }
   }
 
   const selectConvexDoc = (id: Id<'documents'>) => {
-    setConvexDocId(id)
+    setDocumentId(id)
     setLocalPdfUrl(undefined)
-  }
-
-  const setGroupScope = (id: string | null) => {
-    setActiveGroupId(id)
-    setStoredActiveGroupId(id)
+    setRoute('workspace')
   }
 
   const onCreateGroup = async (e: React.FormEvent) => {
@@ -232,34 +237,74 @@ function MainApp() {
     }
   }
 
-  const collaborators =
-    presenceRows
-      ?.filter((p) => p.userId !== userEmail)
-      .map((p) => ({
-        userId: p.userId,
-        displayName: p.displayName,
-        color: p.color,
-      })) ?? []
+  const onCreateBox = useCallback(
+    async (
+      pageNumber: number,
+      rect: { x: number; y: number; width: number; height: number },
+    ) => {
+      if (!documentId || !convexReady) return
+      await createBox({
+        documentId,
+        pageNumber,
+        ...rect,
+        userEmail,
+        status: 'draft',
+      })
+    },
+    [convexReady, createBox, documentId, userEmail],
+  )
 
-  const activeGroupMeta = myGroups?.find(({ group }) => group._id === activeGroupId)
-  const isGroupAdmin = activeGroupMeta?.role === 'admin'
+  const onLockBox = useCallback(
+    async (boxId: string) => {
+      await updateBox({
+        boxId: boxId as Id<'redactionBoxes'>,
+        userEmail,
+        status: 'locked',
+      })
+    },
+    [updateBox, userEmail],
+  )
 
-  return (
-    <AppShell onUploadClick={onUploadClick} onExportClick={() => console.info('Export — Phase 4')}>
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="application/pdf"
-        className="hidden"
-        onChange={(e) => void onFile(e.target.files)}
-      />
+  const onDeleteBox = useCallback(
+    async (boxId: string) => {
+      await deleteBox({ boxId: boxId as Id<'redactionBoxes'>, userEmail })
+    },
+    [deleteBox, userEmail],
+  )
 
-      <div className="mb-6 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+  const onExport = async () => {
+    if (!pdfUrl) return
+    try {
+      const bytes = await fetch(pdfUrl).then((r) => r.arrayBuffer())
+      const byPage = new Map<number, ReturnType<typeof toRedactionExportBox>[]>()
+      for (const box of overlayBoxes) {
+        const list = byPage.get(box.pageNumber ?? 1) ?? []
+        list.push(toRedactionExportBox(box))
+        byPage.set(box.pageNumber ?? 1, list)
+      }
+      const pages = [...byPage.entries()].map(([pageNumber, boxes]) => ({
+        pageIndex: pageNumber - 1,
+        boxes,
+      }))
+      const out = await exportRedactedPdf(bytes, pages)
+      const blob = new Blob([Uint8Array.from(out)], { type: 'application/pdf' })
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = selectedDoc?.name ? `redacted-${selectedDoc.name}` : 'redacted.pdf'
+      a.click()
+      URL.revokeObjectURL(a.href)
+    } catch (e) {
+      console.error('Export failed', e)
+    }
+  }
+
+  const convexBanner = (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
           <PresenceBadge label={convexReady ? 'Convex URL set' : 'Set VITE_CONVEX_URL'} />
           <span className="text-xs text-zinc-500">
-            Editing as{' '}
-            <code className="rounded bg-zinc-100 px-1 py-0.5">{userEmail}</code>
+            Editing as <code className="rounded bg-zinc-100 px-1 py-0.5">{userEmail}</code>
           </span>
           <button
             type="button"
@@ -281,7 +326,7 @@ function MainApp() {
         )}
       </div>
 
-      <div className="mb-6 grid gap-4 lg:grid-cols-2">
+      {['workspace', 'dashboard', 'annotations', 'batch'].includes(route) && (
         <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
           <h2 className="mb-3 text-sm font-medium text-zinc-800">New uploads go to</h2>
           <div className="flex flex-wrap gap-2">
@@ -328,121 +373,220 @@ function MainApp() {
             </form>
           )}
         </section>
-
-        {convexReady && activeGroupId && (
-          <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-            <h2 className="mb-2 text-sm font-medium text-zinc-800">Group members</h2>
-            <ul className="mb-3 flex flex-col gap-1 text-sm text-zinc-700">
-              {membersForActiveGroup?.map((m) => (
-                <li key={m._id} className="flex items-center justify-between gap-2">
-                  <span>
-                    {m.userId}
-                    {m.role === 'admin' ? (
-                      <span className="ml-1 text-xs text-zinc-500">(admin)</span>
-                    ) : null}
-                  </span>
-                  {(isGroupAdmin && m.userId !== userEmail) || m.userId === userEmail ? (
-                    <button
-                      type="button"
-                      className="text-xs text-red-600 hover:underline"
-                      onClick={() =>
-                        void removeMember({
-                          groupId: activeGroupId as Id<'groups'>,
-                          targetEmail: m.userId,
-                          userEmail,
-                        })
-                      }
-                    >
-                      {m.userId === userEmail ? 'Leave' : 'Remove'}
-                    </button>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-            {isGroupAdmin ? (
-              <form className="flex flex-wrap gap-2" onSubmit={(e) => void onAddMember(e)}>
-                <input
-                  type="email"
-                  value={addMemberEmail}
-                  onChange={(e) => setAddMemberEmail(e.target.value)}
-                  placeholder="colleague@firm.com"
-                  className="min-w-[12rem] flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
-                />
-                <button
-                  type="submit"
-                  className="rounded-md bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-800"
-                >
-                  Add member
-                </button>
-              </form>
-            ) : (
-              <p className="text-xs text-zinc-500">Only admins can add members.</p>
-            )}
-            {memberFeedback && <p className="mt-2 text-sm text-red-600">{memberFeedback}</p>}
-          </section>
-        )}
-      </div>
-
-      {convexReady && accessibleDocs && accessibleDocs.length > 0 && (
-        <section className="mb-6 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-          <h2 className="mb-2 text-sm font-medium text-zinc-800">Your documents</h2>
-          <ul className="flex flex-col gap-1 text-sm">
-            {accessibleDocs.map((d) => (
-              <li key={d._id}>
-                <button
-                  type="button"
-                  className={`text-left hover:underline ${
-                    convexDocId === d._id ? 'font-medium text-blue-700' : 'text-zinc-700'
-                  }`}
-                  onClick={() => selectConvexDoc(d._id)}
-                >
-                  {d.name}
-                  {d.groupId ? (
-                    <span className="ml-2 text-xs text-zinc-500">(group)</span>
-                  ) : (
-                    <span className="ml-2 text-xs text-zinc-500">(personal)</span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
       )}
 
-      <div className="mb-6 grid gap-6 lg:grid-cols-[1fr_220px]">
-        <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-medium text-zinc-800">Document</h2>
-            <button
-              type="button"
-              className="text-sm text-blue-600 underline-offset-2 hover:underline"
-              onClick={() => {
-                setLocalPdfUrl(DEMO_PDF)
-                setConvexDocId(null)
-              }}
-            >
-              Load sample PDF
-            </button>
+      {uploadError ? (
+        <div className="rounded border border-error-container bg-error-container px-4 py-3 text-sm text-on-error-container">
+          {uploadError}
+        </div>
+      ) : null}
+    </div>
+  )
+
+  const rightPanel = useMemo(() => {
+    switch (route) {
+      case 'workspace':
+        return (
+          <WorkspaceRightPanel
+            collaborators={collaborators}
+            draftBoxes={overlayBoxes}
+            onLockBox={convexReady ? onLockBox : undefined}
+            onDeleteBox={convexReady ? onDeleteBox : undefined}
+          />
+        )
+      case 'dashboard':
+        return <DashboardRightPanel />
+      case 'conflicts':
+        return <ConflictsRightPanel />
+      case 'annotations':
+        return <AnnotationsRightPanel />
+      case 'batch':
+        return <BatchRightPanel />
+      case 'team':
+        return (
+          <SimpleRightPanel
+            title="Team"
+            description="Manage reviewers, roles, and case assignments."
+          />
+        )
+      case 'archive':
+        return (
+          <SimpleRightPanel title="Archive" description="Closed cases and exported productions." />
+        )
+      case 'settings':
+        return (
+          <SimpleRightPanel title="Settings" description="Workspace preferences and security." />
+        )
+      default:
+        return null
+    }
+  }, [route, collaborators, overlayBoxes, convexReady, onLockBox, onDeleteBox])
+
+  const mainContent = useMemo(() => {
+    switch (route) {
+      case 'workspace':
+        return (
+          <WorkspacePage
+            pdfUrl={pdfUrl}
+            boxes={overlayBoxes}
+            onCreateBox={convexReady && documentId ? onCreateBox : undefined}
+            emptyAction={
+              <button
+                type="button"
+                className="rounded bg-secondary px-4 py-2 text-sm font-semibold text-on-secondary"
+                onClick={() => {
+                  setLocalPdfUrl(DEMO_PDF)
+                  setDocumentId(null)
+                }}
+              >
+                Load sample PDF
+              </button>
+            }
+          />
+        )
+      case 'dashboard':
+        return <DashboardPage />
+      case 'conflicts':
+        return <ConflictsPage />
+      case 'annotations':
+        return <AnnotationsPage />
+      case 'batch':
+        return <BatchPage />
+      case 'team':
+        return (
+          <div className="space-y-6">
+            {convexReady && activeGroupId ? (
+              <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+                <h2 className="mb-2 text-sm font-medium text-zinc-800">Group members</h2>
+                <ul className="mb-3 flex flex-col gap-1 text-sm text-zinc-700">
+                  {membersForActiveGroup?.map((m) => (
+                    <li key={m._id} className="flex items-center justify-between gap-2">
+                      <span>
+                        {m.userId}
+                        {m.role === 'admin' ? (
+                          <span className="ml-1 text-xs text-zinc-500">(admin)</span>
+                        ) : null}
+                      </span>
+                      {(isGroupAdmin && m.userId !== userEmail) || m.userId === userEmail ? (
+                        <button
+                          type="button"
+                          className="text-xs text-red-600 hover:underline"
+                          onClick={() =>
+                            void removeMember({
+                              groupId: activeGroupId as Id<'groups'>,
+                              targetEmail: m.userId,
+                              userEmail,
+                            })
+                          }
+                        >
+                          {m.userId === userEmail ? 'Leave' : 'Remove'}
+                        </button>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+                {isGroupAdmin ? (
+                  <form className="flex flex-wrap gap-2" onSubmit={(e) => void onAddMember(e)}>
+                    <input
+                      type="email"
+                      value={addMemberEmail}
+                      onChange={(e) => setAddMemberEmail(e.target.value)}
+                      placeholder="colleague@firm.com"
+                      className="min-w-[12rem] flex-1 rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+                    />
+                    <button
+                      type="submit"
+                      className="rounded-md bg-zinc-100 px-3 py-1.5 text-sm font-medium text-zinc-800"
+                    >
+                      Add member
+                    </button>
+                  </form>
+                ) : (
+                  <p className="text-xs text-zinc-500">Only admins can add members.</p>
+                )}
+                {memberFeedback && <p className="mt-2 text-sm text-red-600">{memberFeedback}</p>}
+              </section>
+            ) : (
+              <p className="text-sm text-zinc-600">
+                Select a group from the banner above (Personal uploads use your email only).
+              </p>
+            )}
+            <PlaceholderPage
+              title="Team"
+              description="Collaborator roster, permissions, and workload — extend here."
+              icon="groups"
+            />
+            <section className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+              <h2 className="mb-2 text-sm font-medium text-zinc-800">Here now (current document)</h2>
+              <CollaboratorList collaborators={collaborators} />
+            </section>
           </div>
-          <PdfViewer pdfUrl={pdfUrl} boxes={overlayBoxes} />
-          {!pdfUrl && (
-            <p className="mt-4 text-sm text-zinc-500">
-              Upload a PDF or load the sample to exercise PDF.js rendering.
-            </p>
-          )}
-        </section>
-        <aside className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-          <h2 className="mb-2 text-sm font-medium text-zinc-800">Here now</h2>
-          <CollaboratorList collaborators={collaborators} />
-        </aside>
-      </div>
+        )
+      case 'archive':
+        return (
+          <PlaceholderPage
+            title="Archive"
+            description="Historical cases and finalized productions."
+            icon="inventory_2"
+          />
+        )
+      case 'settings':
+        return (
+          <PlaceholderPage
+            title="Settings"
+            description="Application and workspace configuration."
+            icon="settings"
+          />
+        )
+      default:
+        return null
+    }
+  }, [
+    route,
+    pdfUrl,
+    overlayBoxes,
+    convexReady,
+    documentId,
+    onCreateBox,
+    collaborators,
+    activeGroupId,
+    membersForActiveGroup,
+    isGroupAdmin,
+    userEmail,
+    addMemberEmail,
+    memberFeedback,
+    onAddMember,
+    removeMember,
+  ])
+
+  return (
+    <AppShell
+      route={route}
+      onNavigate={setRoute}
+      rightPanel={rightPanel}
+      documents={accessibleDocs}
+      activeDocumentId={documentId}
+      onSelectDocument={selectConvexDoc}
+      onAddDocument={onAddDocument}
+      uploading={uploading}
+      draftCount={draftCount}
+      onExportClick={onExport}
+      convexBanner={convexBanner}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="application/pdf"
+        className="hidden"
+        onChange={(e) => void onFile(e.target.files)}
+      />
+      {mainContent}
     </AppShell>
   )
 }
 
 function App() {
   const hasEmail = typeof window !== 'undefined' && getStoredUserEmail() !== null
-
   return hasEmail ? <MainApp /> : <EmailGate />
 }
 

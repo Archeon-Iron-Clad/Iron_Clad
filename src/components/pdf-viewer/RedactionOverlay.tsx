@@ -30,13 +30,14 @@ export function RedactionOverlay({ boxes, currentPage }: Props) {
         return (
           <div
             key={box.id}
-            className={`absolute box-border border-2 ${locked ? 'border-amber-500/80' : 'border-red-500/80'}`}
+            className={`absolute box-border rounded-sm ${
+              locked ? 'redaction-confirmed border-black' : 'redaction-suggested'
+            }`}
             style={{
               left: style.left,
               top: style.top,
               width: style.width,
               height: style.height,
-              backgroundColor: 'rgba(0,0,0,0.35)',
             }}
           >
             {label ? (

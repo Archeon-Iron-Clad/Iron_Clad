@@ -1,17 +1,66 @@
 import type { ReactNode } from 'react'
-import { Toolbar } from './Toolbar'
+import type { Id } from '../../../convex/_generated/dataModel'
+import type { AppRoute } from '../../navigation/routes'
+import { SIDE_NAV_ROUTES, TOP_NAV_ROUTES, sideNavForRoute, topNavForRoute } from '../../navigation/routes'
+import { LeftSidebar } from './LeftSidebar'
+import { TopAppBar } from './TopAppBar'
+import type { TopNavId, SideNavId } from '../../navigation/routes'
+
+type DocumentRow = { _id: Id<'documents'>; name: string; createdAt: number }
 
 type Props = {
+  route: AppRoute
+  onNavigate: (route: AppRoute) => void
+  rightPanel: ReactNode
   children: ReactNode
-  onUploadClick?: () => void
+  documents?: DocumentRow[]
+  activeDocumentId: Id<'documents'> | null
+  onSelectDocument: (id: Id<'documents'>) => void
+  onAddDocument: () => void
+  uploading?: boolean
+  draftCount?: number
   onExportClick?: () => void
+  convexBanner?: ReactNode
 }
 
-export function AppShell({ children, onUploadClick, onExportClick }: Props) {
+export function AppShell({
+  route,
+  onNavigate,
+  rightPanel,
+  children,
+  documents,
+  activeDocumentId,
+  onSelectDocument,
+  onAddDocument,
+  uploading,
+  draftCount,
+  onExportClick,
+  convexBanner,
+}: Props) {
+  const activeTopNav = topNavForRoute(route)
+  const activeSideNav = sideNavForRoute(route)
+
+  const handleTopNav = (nav: TopNavId) => onNavigate(TOP_NAV_ROUTES[nav])
+  const handleSideNav = (nav: SideNavId) => onNavigate(SIDE_NAV_ROUTES[nav])
+
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-100 text-zinc-900">
-      <Toolbar onUploadClick={onUploadClick} onExportClick={onExportClick} />
-      <main className="mx-auto w-full max-w-5xl flex-1 p-6">{children}</main>
+    <div className="min-h-screen bg-background text-on-surface">
+      <TopAppBar activeNav={activeTopNav} onNavClick={handleTopNav} onExportClick={onExportClick} />
+      <LeftSidebar
+        activeSideNav={activeSideNav}
+        onSideNavClick={handleSideNav}
+        documents={documents}
+        activeDocumentId={activeDocumentId}
+        onSelectDocument={onSelectDocument}
+        onAddDocument={onAddDocument}
+        uploading={uploading}
+        draftCount={draftCount}
+      />
+      {rightPanel}
+      <main className="fixed bottom-0 left-64 right-80 top-14 overflow-auto bg-surface-dim p-gutter">
+        {convexBanner}
+        {children}
+      </main>
     </div>
   )
 }
