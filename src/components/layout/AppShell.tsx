@@ -31,6 +31,10 @@ type Props = {
   onNavigateToCreateCase?: () => void
   thumbnailsCasePanelActive?: boolean
   thumbnailsCaseName?: string
+  thumbnailsPdfSectionTitle?: string
+  thumbnailsScopeKindLabel?: string
+  /** When the active scope is a case created from a Team roster. */
+  thumbnailsAllocatedTeamName?: string | null
   onAddThumbnailsDocument?: () => void
   thumbnailsAddDocumentBusy?: boolean
   thumbnailsAddDocumentDisabled?: boolean
@@ -58,6 +62,9 @@ export function AppShell({
   onNavigateToCreateCase,
   thumbnailsCasePanelActive = false,
   thumbnailsCaseName,
+  thumbnailsPdfSectionTitle = 'Shared PDFs',
+  thumbnailsScopeKindLabel = 'Workspace',
+  thumbnailsAllocatedTeamName,
   onAddThumbnailsDocument,
   thumbnailsAddDocumentBusy,
   thumbnailsAddDocumentDisabled,
@@ -93,6 +100,9 @@ export function AppShell({
         onNavigateToCreateCase={onNavigateToCreateCase}
         thumbnailsCasePanelActive={thumbnailsCasePanelActive}
         thumbnailsCaseName={thumbnailsCaseName}
+        thumbnailsPdfSectionTitle={thumbnailsPdfSectionTitle}
+        thumbnailsScopeKindLabel={thumbnailsScopeKindLabel}
+        thumbnailsAllocatedTeamName={thumbnailsAllocatedTeamName}
         onAddThumbnailsDocument={onAddThumbnailsDocument}
         thumbnailsAddDocumentBusy={thumbnailsAddDocumentBusy}
         thumbnailsAddDocumentDisabled={thumbnailsAddDocumentDisabled}

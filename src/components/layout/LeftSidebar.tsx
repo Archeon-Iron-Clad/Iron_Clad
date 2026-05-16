@@ -26,6 +26,10 @@ type Props = {
   /** Scoped team workspace: sidebar lists group PDFs and multi-upload. */
   thumbnailsCasePanelActive?: boolean
   thumbnailsCaseName?: string
+  thumbnailsPdfSectionTitle?: string
+  thumbnailsScopeKindLabel?: string
+  /** Team whose roster was used for this case (shown under case name). */
+  thumbnailsAllocatedTeamName?: string | null
   onAddThumbnailsDocument?: () => void
   thumbnailsAddDocumentBusy?: boolean
   thumbnailsAddDocumentDisabled?: boolean
@@ -66,6 +70,9 @@ export function LeftSidebar({
   onNavigateToCreateCase,
   thumbnailsCasePanelActive = false,
   thumbnailsCaseName,
+  thumbnailsPdfSectionTitle = 'Shared PDFs',
+  thumbnailsScopeKindLabel = 'Workspace',
+  thumbnailsAllocatedTeamName,
   onAddThumbnailsDocument,
   thumbnailsAddDocumentBusy,
   thumbnailsAddDocumentDisabled,
@@ -138,12 +145,33 @@ export function LeftSidebar({
         {thumbnailsCasePanelActive && (
           <div className="mt-4 border-t border-outline-variant px-3 pt-3">
             <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
-              Case PDFs
+              {thumbnailsPdfSectionTitle}
             </p>
             {thumbnailsCaseName ? (
-              <p className="mb-3 truncate text-xs font-semibold text-on-surface" title={thumbnailsCaseName}>
-                {thumbnailsCaseName}
-              </p>
+              <div className="mb-3 space-y-1">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-on-surface-variant">
+                  {thumbnailsScopeKindLabel}
+                </p>
+                <p
+                  className="truncate text-xs font-semibold text-on-surface"
+                  title={thumbnailsCaseName}
+                >
+                  {thumbnailsCaseName}
+                </p>
+                {thumbnailsAllocatedTeamName ? (
+                  <>
+                    <p className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-secondary">
+                      Team roster
+                    </p>
+                    <p
+                      className="truncate text-xs font-medium text-on-surface"
+                      title={thumbnailsAllocatedTeamName}
+                    >
+                      {thumbnailsAllocatedTeamName}
+                    </p>
+                  </>
+                ) : null}
+              </div>
             ) : null}
             <button
               type="button"

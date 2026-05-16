@@ -19,16 +19,26 @@ async function requireAdmin(ctx: Ctx, groupId: Id<"groups">, userEmail: string) 
 }
 
 export const create = mutation({
-  args: { name: v.string(), sessionToken: v.string() },
+  args: {
+    name: v.string(),
+    sessionToken: v.string(),
+    kind: v.union(v.literal("team"), v.literal("case")),
+    sourceTeamName: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const userEmail = await requireUserEmail(ctx, args.sessionToken);
     const name = args.name.trim();
     if (!name) throw new Error("Name required");
+    const rosterLabel = args.sourceTeamName?.trim();
     const now = Date.now();
     const groupId = await ctx.db.insert("groups", {
       name,
       createdBy: userEmail,
       createdAt: now,
+      kind: args.kind,
+      ...(args.kind === "case" && rosterLabel
+        ? { sourceTeamName: rosterLabel }
+        : {}),
     });
     await ctx.db.insert("groupMembers", {
       groupId,

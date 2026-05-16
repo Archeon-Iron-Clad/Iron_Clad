@@ -114,6 +114,27 @@ function MainApp({
   const convexReady = isConvexConfigured()
 
   const myGroups = useQuery(api.groups.listMyGroups, convexReady ? { sessionToken } : 'skip')
+
+  const myTeamsOnly = useMemo(
+    () => myGroups?.filter(({ group }) => group.kind !== 'case'),
+    [myGroups],
+  )
+  const myCasesOnly = useMemo(
+    () => myGroups?.filter(({ group }) => group.kind === 'case'),
+    [myGroups],
+  )
+
+  const effectiveTeamManagementId = useMemo((): Id<'groups'> | undefined => {
+    if (activeGroupId === null) return undefined
+    return myTeamsOnly?.some(({ group }) => group._id === activeGroupId) ? activeGroupId : undefined
+  }, [activeGroupId, myTeamsOnly])
+
+  const scopedCaseUploadName = useMemo(() => {
+    if (activeGroupId === null || !myGroups) return null
+    const row = myGroups.find(({ group }) => group._id === activeGroupId)
+    return row?.group.kind === 'case' ? row.group.name : null
+  }, [activeGroupId, myGroups])
+
   const accessibleDocs = useQuery(api.documents.listAccessible, convexReady ? { sessionToken } : 'skip')
 
   const selectedDoc = useQuery(
@@ -137,8 +158,54 @@ function MainApp({
 
   const membersForActiveGroup = useQuery(
     api.groups.listMembers,
-    convexReady && activeGroupId ? { groupId: activeGroupId, sessionToken } : 'skip',
+    convexReady && effectiveTeamManagementId
+      ? { groupId: effectiveTeamManagementId, sessionToken }
+      : 'skip',
   )
+
+  const editorsGroupId = useMemo((): Id<'groups'> | null => {
+    const fromDoc = selectedDoc?.groupId ?? null
+    if (fromDoc) return fromDoc
+    return activeGroupId
+  }, [selectedDoc?.groupId, activeGroupId])
+
+  const allocatedEditorsForWorkspace = useQuery(
+    api.groups.listMembers,
+    convexReady && editorsGroupId ? { groupId: editorsGroupId, sessionToken } : 'skip',
+  )
+
+  const workspaceEditorAllocationContext = useMemo(() => {
+    if (!myGroups || !editorsGroupId) return null
+    const row = myGroups.find(({ group }) => group._id === editorsGroupId)
+    if (!row) return null
+    const kind = row.group.kind
+    const label =
+      kind === 'case' ? 'Case' : kind === 'team' ? 'Team' : 'Shared workspace'
+    return {
+      label,
+      name: row.group.name,
+      sourceTeamName: row.group.sourceTeamName,
+    }
+  }, [myGroups, editorsGroupId])
+
+  const workspaceAllocation = useMemo(() => {
+    if (!convexReady || editorsGroupId === null) return { kind: 'none' as const }
+    if (myGroups === undefined || allocatedEditorsForWorkspace === undefined) {
+      return { kind: 'loading' as const }
+    }
+    if (!workspaceEditorAllocationContext) return { kind: 'loading' as const }
+    return {
+      kind: 'ready' as const,
+      context: workspaceEditorAllocationContext,
+      editors: allocatedEditorsForWorkspace,
+    }
+  }, [
+    convexReady,
+    editorsGroupId,
+    myGroups,
+    allocatedEditorsForWorkspace,
+    workspaceEditorAllocationContext,
+  ])
 
   const setPreferredUploadGroup = useMutation(api.session.setPreferredUploadGroup)
 
@@ -197,8 +264,8 @@ function MainApp({
   )
 
   const draftCount = overlayBoxes.filter((b) => b.status === 'draft').length
-  const activeGroupMeta = myGroups?.find(({ group }) => group._id === activeGroupId)
-  const isGroupAdmin = activeGroupMeta?.role === 'admin'
+  const isTeamGroupAdmin =
+    myTeamsOnly?.find(({ group }) => group._id === effectiveTeamManagementId)?.role === 'admin'
 
   const setGroupScope = useCallback(
     async (id: string | null) => {
@@ -282,7 +349,20 @@ function MainApp({
       if (!convexReady) return
 
       const name = payload.name.trim()
-      const groupIdNew = await createGroup({ name, sessionToken })
+      const rosterSourceName =
+        payload.importMembersFromGroupId !== undefined && myTeamsOnly
+          ? myTeamsOnly.find(({ group }) => group._id === payload.importMembersFromGroupId)?.group
+              .name
+          : undefined
+
+      const groupIdNew = await createGroup({
+        name,
+        sessionToken,
+        kind: 'case',
+        ...(rosterSourceName?.trim()
+          ? { sourceTeamName: rosterSourceName.trim() }
+          : {}),
+      })
       await setGroupScope(groupIdNew)
 
       const invite = new Set<string>()
@@ -332,6 +412,7 @@ function MainApp({
       convex,
       convexReady,
       createGroup,
+      myTeamsOnly,
       session.email,
       sessionToken,
       setGroupScope,
@@ -355,6 +436,23 @@ function MainApp({
   }, [accessibleDocs, activeGroupId, convexReady])
 
   const thumbnailsCasePanelActive = Boolean(convexReady && activeGroupId !== null)
+
+  const thumbnailsScopeUi = useMemo(() => {
+    if (!myGroups || activeGroupId === null) {
+      return {
+        pdfSectionTitle: 'Shared PDFs',
+        scopeKindLabel: 'Workspace',
+        allocatedTeamName: null as string | null,
+      }
+    }
+    const row = myGroups.find(({ group }) => group._id === activeGroupId)
+    const isCase = row?.group.kind === 'case'
+    return {
+      pdfSectionTitle: isCase ? 'Case PDFs' : 'Team PDFs',
+      scopeKindLabel: isCase ? 'Case' : 'Team',
+      allocatedTeamName: isCase ? row?.group.sourceTeamName ?? null : null,
+    }
+  }, [myGroups, activeGroupId])
 
   const onRenameDocument = useCallback(
     async (id: Id<'documents'>, name: string) => {
@@ -380,17 +478,17 @@ function MainApp({
     e.preventDefault()
     const name = newGroupName.trim()
     if (!name || !convexReady) return
-    await createGroup({ name, sessionToken })
+    await createGroup({ name, sessionToken, kind: 'team' })
     setNewGroupName('')
   }
 
   const onAddMember = async (e: FormEvent) => {
     e.preventDefault()
-    if (!activeGroupId || !convexReady) return
+    if (!effectiveTeamManagementId || !convexReady) return
     setMemberFeedback(null)
     try {
       await addMember({
-        groupId: activeGroupId,
+        groupId: effectiveTeamManagementId,
         targetEmail: addMemberEmail.trim(),
         sessionToken,
       })
@@ -548,6 +646,8 @@ function MainApp({
       case 'workspace':
         return (
           <WorkspaceRightPanel
+            currentUserEmail={userEmail}
+            allocation={workspaceAllocation}
             collaborators={collaborators}
             draftBoxes={overlayBoxes}
             onLockBox={convexReady ? onLockBox : undefined}
@@ -593,7 +693,7 @@ function MainApp({
         return (
           <SimpleRightPanel
             title="Cases"
-            description="Create matters, reuse rosters from other teams, and attach PDFs. Cases map directly to Convex groups."
+            description="Matters shown here are separate from Teams—you can reuse a Team roster by name or paste login emails."
           />
         )
       case 'archive':
@@ -610,7 +710,7 @@ function MainApp({
       default:
         return null
     }
-  }, [route, collaborators, overlayBoxes, convexReady, onLockBox, onDeleteBox])
+  }, [route, userEmail, workspaceAllocation, collaborators, overlayBoxes, convexReady, onLockBox, onDeleteBox])
 
   const mainContent = useMemo(() => {
     switch (route) {
@@ -654,7 +754,8 @@ function MainApp({
         return (
           <CasesPage
             convexReady={convexReady}
-            myGroups={myGroups}
+            myCases={myCasesOnly}
+            teamsForRoster={myTeamsOnly}
             activeGroupId={activeGroupId}
             onOpenCase={(id) => void openCaseWorkspace(id)}
             onCreateCase={(payload) => void createCaseWithDetails(payload)}
@@ -669,22 +770,23 @@ function MainApp({
           <TeamsPage
             convexReady={convexReady}
             userEmail={userEmail}
-            myGroups={myGroups}
+            myTeams={myTeamsOnly}
+            uploadScopeCaseName={scopedCaseUploadName}
             activeGroupId={activeGroupId}
             onSelectScope={setGroupScope}
             newGroupName={newGroupName}
             onNewGroupNameChange={setNewGroupName}
             onCreateGroup={onCreateGroup}
             membersForActiveGroup={membersForActiveGroup}
-            isGroupAdmin={isGroupAdmin}
+            isGroupAdmin={Boolean(isTeamGroupAdmin)}
             addMemberEmail={addMemberEmail}
             onAddMemberEmailChange={setAddMemberEmail}
             onAddMember={onAddMember}
             memberFeedback={memberFeedback}
             onRemoveMember={(targetEmail) => {
-              if (!activeGroupId) return
+              if (!effectiveTeamManagementId) return
               void removeMember({
-                groupId: activeGroupId,
+                groupId: effectiveTeamManagementId,
                 targetEmail,
                 sessionToken,
               })
@@ -721,9 +823,12 @@ function MainApp({
     onMoveBox,
     onDeleteBox,
     activeGroupId,
-    myGroups,
+    myCasesOnly,
+    myTeamsOnly,
+    effectiveTeamManagementId,
+    scopedCaseUploadName,
     membersForActiveGroup,
-    isGroupAdmin,
+    isTeamGroupAdmin,
     userEmail,
     displayName,
     session.expiresAt,
@@ -769,6 +874,9 @@ function MainApp({
       }}
       thumbnailsCasePanelActive={thumbnailsCasePanelActive}
       thumbnailsCaseName={workspaceTitle}
+      thumbnailsPdfSectionTitle={thumbnailsScopeUi.pdfSectionTitle}
+      thumbnailsScopeKindLabel={thumbnailsScopeUi.scopeKindLabel}
+      thumbnailsAllocatedTeamName={thumbnailsScopeUi.allocatedTeamName}
       onAddThumbnailsDocument={() => thumbnailsInputRef.current?.click()}
       thumbnailsAddDocumentBusy={bulkSidebarBusy}
       thumbnailsAddDocumentDisabled={bulkSidebarBusy}

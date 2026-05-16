@@ -16,6 +16,10 @@ export default defineSchema({
     /** Self-declared email (no verification). */
     createdBy: v.string(),
     createdAt: v.number(),
+    /** "team" = shared folder/roster only; "case" = matter shown on Cases. Undefined = legacy (treated as team in UI lists). */
+    kind: v.optional(v.union(v.literal("team"), v.literal("case"))),
+    /** When creating a case, optional label for the Team roster copied into editors. */
+    sourceTeamName: v.optional(v.string()),
   }),
 
   groupMembers: defineTable({

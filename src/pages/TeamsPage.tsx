@@ -1,7 +1,11 @@
 import type { Id } from '../../convex/_generated/dataModel'
 import { Icon } from '../components/ui/Icon'
 
-type GroupRow = { group: { _id: Id<'groups'>; name: string; createdAt: number }; role: 'admin' | 'member' }
+type GroupRow = {
+  group: { _id: Id<'groups'>; name: string; createdAt: number; kind?: 'team' | 'case' }
+  role: 'admin' | 'member'
+}
+
 type MemberRow = {
   _id: Id<'groupMembers'>
   groupId: Id<'groups'>
@@ -13,7 +17,9 @@ type MemberRow = {
 type Props = {
   convexReady: boolean
   userEmail: string
-  myGroups: GroupRow[] | undefined
+  myTeams: GroupRow[] | undefined
+  /** When upload scope points at a Case, Teams UI only edits Teams—explain mismatch. */
+  uploadScopeCaseName?: string | null
   activeGroupId: string | null
   onSelectScope: (groupId: string | null) => void | Promise<void>
   newGroupName: string
@@ -31,7 +37,8 @@ type Props = {
 export function TeamsPage({
   convexReady,
   userEmail,
-  myGroups,
+  myTeams,
+  uploadScopeCaseName,
   activeGroupId,
   onSelectScope,
   newGroupName,
@@ -45,6 +52,11 @@ export function TeamsPage({
   memberFeedback,
   onRemoveMember,
 }: Props) {
+  const selectedTeamId =
+    activeGroupId !== null && myTeams?.some(({ group }) => group._id === activeGroupId)
+      ? activeGroupId
+      : null
+
   const pill = (selected: boolean) =>
     selected
       ? 'border-secondary bg-secondary font-semibold text-on-secondary'
@@ -55,8 +67,8 @@ export function TeamsPage({
       <header>
         <h1 className="text-2xl font-bold text-on-surface">Teams</h1>
         <p className="mt-1 text-sm text-on-surface-variant">
-          Shared folders for your workspace. Uploads sent to a team appear for every member—you do not need to share each
-          file again.
+          Shared folders that won&apos;t appear on the Cases page. Create Teams here for standing rosters—then reuse them when
+          you open or create a case. Uploads routed to a team are visible to every member.
         </p>
       </header>
 
@@ -68,7 +80,8 @@ export function TeamsPage({
           <div className="min-w-0 flex-1">
             <h2 className="text-sm font-semibold text-on-surface">Where new uploads go</h2>
             <p className="mt-0.5 text-xs text-on-surface-variant">
-              Choose before you upload from the sidebar. Personal files stay visible only to you.
+              Choose before you upload from the sidebar. Personal files stay visible only to you. Teams listed here exclude
+              matters from the Cases page.
             </p>
             {!convexReady ? (
               <p className="mt-4 text-xs text-secondary">
@@ -76,6 +89,13 @@ export function TeamsPage({
               </p>
             ) : (
               <>
+                {uploadScopeCaseName ? (
+                  <p className="mt-4 rounded-lg border border-secondary-container bg-surface-container-low px-3 py-2 text-xs text-on-surface-variant">
+                    Your upload scope is currently the case{' '}
+                    <span className="font-semibold text-on-surface">&quot;{uploadScopeCaseName}&quot;</span>. Select Personal
+                    or a Team below when you want to manage sharing for a roster (or switch scope from Cases or workspace).
+                  </p>
+                ) : null}
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -84,7 +104,7 @@ export function TeamsPage({
                   >
                     Personal
                   </button>
-                  {myGroups?.map(({ group }) => (
+                  {myTeams?.map(({ group }) => (
                     <button
                       key={group._id}
                       type="button"
@@ -95,7 +115,10 @@ export function TeamsPage({
                     </button>
                   ))}
                 </div>
-                <form className="mt-6 flex flex-wrap gap-2 border-t border-outline-variant pt-6" onSubmit={(e) => void onCreateGroup(e)}>
+                <form
+                  className="mt-6 flex flex-wrap gap-2 border-t border-outline-variant pt-6"
+                  onSubmit={(e) => void onCreateGroup(e)}
+                >
                   <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-xs font-medium text-on-surface-variant">
                     New team name
                     <input
@@ -132,9 +155,11 @@ export function TeamsPage({
               with the same email (start a session under that address).
             </p>
 
-            {!convexReady ? null : activeGroupId === null ? (
+            {!convexReady ? null : selectedTeamId === null ? (
               <p className="mt-4 text-sm text-on-surface-variant">
-                Select a team above to see who has access and to add members.
+                {activeGroupId === null
+                  ? 'Select a team above to see who has access and to add members.'
+                  : 'Your upload scope is a case or personal workspace. Select one of your Teams above to manage its roster and invites.'}
               </p>
             ) : (
               <>

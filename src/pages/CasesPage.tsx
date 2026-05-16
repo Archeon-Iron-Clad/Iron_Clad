@@ -10,11 +10,23 @@ export type CreateCasePayload = {
   pdfFiles: File[]
 }
 
-type GroupRow = { group: { _id: Id<'groups'>; name: string; createdAt: number }; role: 'admin' | 'member' }
+type GroupRow = {
+  group: {
+    _id: Id<'groups'>
+    name: string
+    createdAt: number
+    kind?: 'team' | 'case'
+    sourceTeamName?: string
+  }
+  role: 'admin' | 'member'
+}
 
 type Props = {
   convexReady: boolean
-  myGroups: GroupRow[] | undefined
+  /** Matters (kind case only). */
+  myCases: GroupRow[] | undefined
+  /** Teams used to import a roster into a new case (kind team + legacy rows). */
+  teamsForRoster: GroupRow[] | undefined
   activeGroupId: string | null
   onOpenCase: (id: Id<'groups'>) => void
   onCreateCase: (payload: CreateCasePayload) => void | Promise<void>
@@ -27,7 +39,8 @@ type Props = {
 
 export function CasesPage({
   convexReady,
-  myGroups,
+  myCases,
+  teamsForRoster,
   activeGroupId,
   onOpenCase,
   onCreateCase,
@@ -40,7 +53,6 @@ export function CasesPage({
   const [createOpen, setCreateOpen] = useState(false)
   const [name, setName] = useState('')
   const [memberRows, setMemberRows] = useState<string[]>([''])
-  const [teamNameFilter, setTeamNameFilter] = useState('')
   const [importTeamId, setImportTeamId] = useState<Id<'groups'> | ''>('')
   const [pdfs, setPdfs] = useState<File[]>([])
   const [saving, setSaving] = useState(false)
@@ -53,30 +65,22 @@ export function CasesPage({
     if (!createOpen) {
       setName('')
       setMemberRows([''])
-      setTeamNameFilter('')
       setImportTeamId('')
       setPdfs([])
       setFormError(null)
     }
   }, [createOpen])
 
-  const teamNameLc = teamNameFilter.trim().toLowerCase()
-
-  const teamsMatchingFilter = useMemo(() => {
-    const list = myGroups ?? []
-    if (!teamNameLc) return list
-    return list.filter(({ group }) => group.name.toLowerCase().includes(teamNameLc))
-  }, [myGroups, teamNameLc])
-
   const teamSelectRows = useMemo(() => {
-    if (!importTeamId) return teamsMatchingFilter
-    if (teamsMatchingFilter.some(({ group }) => group._id === importTeamId)) return teamsMatchingFilter
-    const row = (myGroups ?? []).find(({ group }) => group._id === importTeamId)
-    return row ? [row, ...teamsMatchingFilter] : teamsMatchingFilter
-  }, [importTeamId, myGroups, teamsMatchingFilter])
+    const list = teamsForRoster ?? []
+    if (!importTeamId) return list
+    if (list.some(({ group }) => group._id === importTeamId)) return list
+    const row = (teamsForRoster ?? []).find(({ group }) => group._id === importTeamId)
+    return row ? [row, ...list] : list
+  }, [importTeamId, teamsForRoster])
 
   const importTeamMeta = importTeamId
-    ? (myGroups ?? []).find(({ group }) => group._id === importTeamId)
+    ? (teamsForRoster ?? []).find(({ group }) => group._id === importTeamId)
     : undefined
 
   useEffect(() => {
@@ -151,7 +155,7 @@ export function CasesPage({
 
   const removePdf = (index: number) => setPdfs((prev) => prev.filter((_, i) => i !== index))
 
-  const cases = myGroups ?? []
+  const cases = myCases ?? []
 
   return (
     <div className="min-h-full bg-surface p-6">
@@ -160,7 +164,8 @@ export function CasesPage({
           <div>
             <h1 className="text-2xl font-bold text-on-surface">Cases</h1>
             <p className="mt-1 text-sm text-on-surface-variant">
-              Open an existing matter or create a new one. Cases map to teams—members and uploads share that scope.
+              Cases are separate from Teams. Matters you create here do not reuse the Teams list—you can still invite members
+              by their session email or copy everyone from an existing Team by name.
             </p>
           </div>
         </div>
@@ -184,7 +189,7 @@ export function CasesPage({
           </span>
           <span className="text-sm font-semibold text-on-surface">Create case</span>
           <span className="max-w-[14rem] text-center text-xs text-on-surface-variant">
-            Name the matter, invite teammates (or reuse a team roster), attach PDFs
+            Name the matter, add people by login email, optionally copy roster from an existing Team name, attach PDFs
           </span>
         </button>
 
@@ -212,6 +217,11 @@ export function CasesPage({
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-base font-bold text-on-surface">{group.name}</p>
                     <p className="mt-0.5 text-xs text-on-surface-variant">{fmt(group.createdAt)}</p>
+                    {group.sourceTeamName ? (
+                      <p className="mt-1 truncate text-[11px] text-secondary">
+                        Team roster: <span className="font-semibold">{group.sourceTeamName}</span>
+                      </p>
+                    ) : null}
                   </div>
                 </div>
                 <div className="mt-auto flex items-center gap-2 text-xs">
@@ -266,8 +276,8 @@ export function CasesPage({
               New case
             </h2>
             <p className="mt-1 text-sm text-on-surface-variant">
-              Add people by email, or invite everyone already on another case/team (by name). You can do
-              both—addresses are merged. PDFs optional.
+              Invite people using the same email address they sign in with. Optionally copy membership from one of your Teams
+              (by name below). Addresses are merged—you can combine both methods.
             </p>
 
             <form className="mt-5 flex flex-col gap-5" onSubmit={(e) => void submitCreate(e)}>
@@ -277,38 +287,32 @@ export function CasesPage({
                 </div>
               ) : null}
 
-              <label className="flex flex-col gap-1 text-xs font-medium text-on-surface-variant">
-                Case name
+              <div className="flex flex-col gap-1">
+                <label className="flex flex-col gap-1 text-xs font-medium text-on-surface-variant" htmlFor="case-name-input">
+                  Case name
+                </label>
                 <input
+                  id="case-name-input"
                   autoFocus
+                  autoComplete="off"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="e.g. Smith v. Acme · Phase 2"
-                  className="rounded-lg border border-outline-variant bg-background px-3 py-2 text-sm text-on-surface outline-none ring-secondary focus:border-transparent focus:ring-2"
+                  placeholder="Enter a name for this matter"
+                  disabled={saving || !convexReady}
+                  className="rounded-lg border border-outline-variant bg-background px-3 py-2 text-sm text-on-surface outline-none ring-secondary focus:border-transparent focus:ring-2 disabled:opacity-50"
                 />
-              </label>
+              </div>
 
               <fieldset className="flex flex-col gap-2 rounded-lg border border-outline-variant/80 bg-surface-container-low/40 p-3">
                 <legend className="px-1 text-xs font-semibold text-on-surface">
-                  Prefill roster from existing team/case (optional)
+                  Copy roster from a Team (optional)
                 </legend>
                 <p className="text-[11px] text-on-surface-variant">
-                  Pick a group you&apos;re already in to copy everyone onto this new matter (excluding you).
-                  You can still fine-tune emails below.
+                  Teams you joined on the Teams page appear below. Selecting one copies everyone (except you) onto this case.
+                  You can still refine login emails below.
                 </p>
                 <label className="flex flex-col gap-1 text-xs font-medium text-on-surface-variant">
-                  Filter by team/case name
-                  <input
-                    value={teamNameFilter}
-                    onChange={(e) => setTeamNameFilter(e.target.value)}
-                    placeholder="Type part of the name…"
-                    autoComplete="off"
-                    disabled={saving || !convexReady}
-                    className="rounded-lg border border-outline-variant bg-background px-3 py-2 text-sm text-on-surface outline-none ring-secondary focus:border-transparent focus:ring-2 disabled:opacity-50"
-                  />
-                </label>
-                <label className="flex flex-col gap-1 text-xs font-medium text-on-surface-variant">
-                  Team/case to copy from
+                  Team to copy members from
                   <select
                     value={importTeamId}
                     disabled={saving || !convexReady}
@@ -335,17 +339,22 @@ export function CasesPage({
 
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-on-surface-variant">More team members</span>
+                  <span className="text-xs font-medium text-on-surface-variant">
+                    Invite by login email{' '}
+                    <span className="block font-normal text-[11px] text-on-surface-variant/85">
+                      (same address they use to sign into Iron Clad)
+                    </span>
+                  </span>
                   <button
                     type="button"
-                    className="text-xs font-semibold text-secondary hover:underline"
+                    className="shrink-0 text-xs font-semibold text-secondary hover:underline"
                     onClick={addMemberRow}
                   >
-                    + Add email one by one
+                    + Add email
                   </button>
                 </div>
                 <p className="text-[11px] text-on-surface-variant">
-                  Combined with roster import above. You’re added automatically as lead on this new case.
+                  Combined with team roster import above. You are included automatically as lead on this case.
                 </p>
                 <ul className="flex flex-col gap-2">
                   {memberRows.map((row, i) => (
