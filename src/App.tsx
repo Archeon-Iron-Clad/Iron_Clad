@@ -17,6 +17,7 @@ import { WorkspaceRightPanel } from './components/layout/panels/WorkspaceRightPa
 import type { OverlayBox } from './components/pdf-viewer/RedactionOverlay'
 import { clearStoredSessionToken, getStoredSessionToken } from './lib/sessionToken'
 import { isConvexConfigured } from './lib/convexClient'
+import { enhanceConvexActionError } from './lib/convexErrors'
 import { useDocumentUpload } from './lib/hooks/useDocumentUpload'
 import { usePresenceHeartbeat } from './lib/hooks/usePresenceHeartbeat'
 import { exportVisualRedactionPreview } from './lib/pdf/exportVisualRedactionPreview'
@@ -357,66 +358,74 @@ function MainApp({
 
   const createCaseWithDetails = useCallback(
     async (payload: CreateCasePayload) => {
-      if (!convexReady) return
-
-      const name = payload.name.trim()
-      const rosterSourceName =
-        payload.importMembersFromGroupId !== undefined && myTeamsOnly
-          ? myTeamsOnly.find(({ group }) => group._id === payload.importMembersFromGroupId)?.group
-              .name
-          : undefined
-
-      const groupIdNew = await createGroup({
-        name,
-        sessionToken,
-        kind: 'case',
-        ...(rosterSourceName?.trim()
-          ? { sourceTeamName: rosterSourceName.trim() }
-          : {}),
-      })
-      await setGroupScope(groupIdNew)
-
-      const invite = new Set<string>()
-      const selfLower = session.email.trim().toLowerCase()
-      for (const raw of payload.memberEmails) {
-        const t = raw.trim().toLowerCase()
-        if (t.includes('@')) invite.add(t)
+      if (!convexReady) {
+        throw new Error(
+          'Convex is not configured in this build (VITE_CONVEX_URL is empty). Add your Convex HTTPS URL under Environment Variables on Vercel, redeploy, then try again.',
+        )
       }
-      if (payload.importMembersFromGroupId) {
-        const roster = await convex.query(api.groups.listMembers, {
-          groupId: payload.importMembersFromGroupId,
+
+      try {
+        const name = payload.name.trim()
+        const rosterSourceName =
+          payload.importMembersFromGroupId !== undefined && myTeamsOnly
+            ? myTeamsOnly.find(({ group }) => group._id === payload.importMembersFromGroupId)?.group
+                .name
+            : undefined
+
+        const groupIdNew = await createGroup({
+          name,
           sessionToken,
+          kind: 'case',
+          ...(rosterSourceName?.trim()
+            ? { sourceTeamName: rosterSourceName.trim() }
+            : {}),
         })
-        for (const m of roster) {
-          const e = String(m.userId).trim().toLowerCase()
-          if (e && e.includes('@') && e !== selfLower) invite.add(e)
+        await setGroupScope(groupIdNew)
+
+        const invite = new Set<string>()
+        const selfLower = session.email.trim().toLowerCase()
+        for (const raw of payload.memberEmails) {
+          const t = raw.trim().toLowerCase()
+          if (t.includes('@')) invite.add(t)
         }
-      }
-
-      for (const target of invite) {
-        await addMember({ groupId: groupIdNew, targetEmail: target, sessionToken })
-      }
-
-      let failedPdf = 0
-      let firstUploaded: Id<'documents'> | null = null
-
-      if (payload.pdfFiles.length && groupIdNew) {
-        for (const file of payload.pdfFiles) {
-          const pid = await uploadPdf(file, groupIdNew, { quiet: true })
-          if (!pid) failedPdf += 1
-          else if (!firstUploaded) firstUploaded = pid
+        if (payload.importMembersFromGroupId) {
+          const roster = await convex.query(api.groups.listMembers, {
+            groupId: payload.importMembersFromGroupId,
+            sessionToken,
+          })
+          for (const m of roster) {
+            const e = String(m.userId).trim().toLowerCase()
+            if (e && e.includes('@') && e !== selfLower) invite.add(e)
+          }
         }
-      }
 
-      if (failedPdf > 0) {
-        window.alert(`${failedPdf} PDF(s) failed to attach. Others may have succeeded—check the sidebar.`)
-      }
+        for (const target of invite) {
+          await addMember({ groupId: groupIdNew, targetEmail: target, sessionToken })
+        }
 
-      if (firstUploaded) {
-        setDocumentId(firstUploaded)
-        setLocalPdfUrl(undefined)
+        let failedPdf = 0
+        let firstUploaded: Id<'documents'> | null = null
+
+        if (payload.pdfFiles.length && groupIdNew) {
+          for (const file of payload.pdfFiles) {
+            const pid = await uploadPdf(file, groupIdNew, { quiet: true })
+            if (!pid) failedPdf += 1
+            else if (!firstUploaded) firstUploaded = pid
+          }
+        }
+
+        if (failedPdf > 0) {
+          window.alert(`${failedPdf} PDF(s) failed to attach. Others may have succeeded—check the sidebar.`)
+        }
+
+        if (firstUploaded) {
+          setDocumentId(firstUploaded)
+          setLocalPdfUrl(undefined)
+        }
+        setRoute('workspace')
+      } catch (e) {
+        throw enhanceConvexActionError(e, 'Could not finish creating this case')
       }
-      setRoute('workspace')
     },
     [
       addMember,

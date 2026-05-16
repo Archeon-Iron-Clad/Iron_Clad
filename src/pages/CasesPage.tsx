@@ -282,7 +282,7 @@ export function CasesPage({
 
             <form className="mt-5 flex flex-col gap-5" onSubmit={(e) => void submitCreate(e)}>
               {formError ? (
-                <div className="rounded-lg border border-error-container bg-error-container px-3 py-2 text-sm text-on-error-container">
+                <div className="whitespace-pre-wrap rounded-lg border border-error-container bg-error-container px-3 py-2 text-sm text-on-error-container">
                   {formError}
                 </div>
               ) : null}
