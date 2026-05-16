@@ -43,9 +43,27 @@ function initialsFromEmail(email: string): string {
   return first ? first.toUpperCase() : '?'
 }
 
+function initialsFromDisplayOrEmail(displayName: string | null | undefined, email: string): string {
+  const name = displayName?.trim()
+  if (name) {
+    const parts = name.split(/\s+/).filter(Boolean)
+    if (parts.length >= 2) {
+      const a = parts[0]![0]
+      const b = parts[parts.length - 1]![0]
+      if (a && b) return (a + b).toUpperCase()
+    }
+    const alnum = name.replace(/[^a-zA-Z0-9]/g, '')
+    if (alnum.length >= 2) return alnum.slice(0, 2).toUpperCase()
+    if (alnum.length === 1) return (alnum + alnum).toUpperCase()
+  }
+  return initialsFromEmail(email)
+}
+
 type SessionPayload = {
   email: string
+  displayName: string | null
   preferredUploadGroupId: Id<'groups'> | null
+  expiresAt: number
 }
 
 function AuthenticatedApp({ sessionToken }: { sessionToken: string }) {
@@ -76,6 +94,7 @@ function MainApp({
 }) {
   const convex = useConvex()
   const userEmail = session.email
+  const displayName = session.displayName
   const activeGroupId = session.preferredUploadGroupId
 
   const [route, setRoute] = useState<AppRoute>('workspace')
@@ -138,7 +157,11 @@ function MainApp({
     activeGroupId ?? undefined,
   )
 
-  usePresenceHeartbeat(convexReady ? sessionToken : null, convexReady ? documentId : null)
+  usePresenceHeartbeat(
+    convexReady ? sessionToken : null,
+    convexReady ? documentId : null,
+    displayName?.trim() || undefined,
+  )
 
   const overlayBoxes: OverlayBox[] = useMemo(
     () =>
@@ -581,7 +604,7 @@ function MainApp({
         return (
           <SimpleRightPanel
             title="Settings"
-            description="Manage your session email and Convex connection in the main area."
+            description="Profile name, theme, session details, and Convex status live in the main area."
           />
         )
       default:
@@ -676,7 +699,14 @@ function MainApp({
           </div>
         )
       case 'settings':
-        return <SettingsPage userEmail={userEmail} sessionToken={sessionToken} />
+        return (
+          <SettingsPage
+            userEmail={userEmail}
+            displayName={displayName}
+            sessionExpiresAt={session.expiresAt}
+            sessionToken={sessionToken}
+          />
+        )
       default:
         return null
     }
@@ -695,6 +725,8 @@ function MainApp({
     membersForActiveGroup,
     isGroupAdmin,
     userEmail,
+    displayName,
+    session.expiresAt,
     newGroupName,
     addMemberEmail,
     memberFeedback,
@@ -727,7 +759,8 @@ function MainApp({
       onExportRelease={pdfUrl ? onExportRelease : undefined}
       exportDisabled={!pdfUrl}
       onTopBarSettingsClick={() => setRoute('settings')}
-      userInitials={initialsFromEmail(userEmail)}
+      onProfileClick={() => setRoute('settings')}
+      userInitials={initialsFromDisplayOrEmail(displayName, userEmail)}
       mainNotice={mainNoticeCombined}
       onNavigateToCases={() => setRoute('cases')}
       onNavigateToCreateCase={() => {

@@ -37,7 +37,9 @@ export const getSession = query({  args: { sessionToken: v.string() },
     if (!s) return null;
     return {
       email: s.email,
+      displayName: s.displayName ?? null,
       preferredUploadGroupId: s.preferredUploadGroupId ?? null,
+      expiresAt: s.expiresAt,
     };
   },
 });
@@ -47,6 +49,21 @@ export const revokeSession = mutation({
   handler: async (ctx, { sessionToken }) => {
     const s = await getSessionDoc(ctx, sessionToken);
     if (s) await ctx.db.delete(s._id);
+  },
+});
+
+export const setDisplayName = mutation({
+  args: {
+    sessionToken: v.string(),
+    displayName: v.string(),
+  },
+  handler: async (ctx, { sessionToken, displayName }) => {
+    const session = await getSessionDoc(ctx, sessionToken);
+    if (!session) throw new Error("Unauthorized");
+    const trimmed = displayName.trim();
+    const next = trimmed.length === 0 ? undefined : trimmed.slice(0, 64);
+    await ctx.db.patch(session._id, { displayName: next });
+    return { ok: true as const };
   },
 });
 

@@ -9,6 +9,8 @@ type Props = {
   onExportRelease?: () => void
   exportDisabled?: boolean
   onSettingsClick?: () => void
+  /** Avatar opens profile / account settings (same route as sidebar settings). */
+  onProfileClick?: () => void
   userInitials: string
 }
 
@@ -26,6 +28,7 @@ export function TopAppBar({
   onExportRelease,
   exportDisabled,
   onSettingsClick,
+  onProfileClick,
   userInitials,
 }: Props) {
   const navClass = (key: TopNavId) =>
@@ -65,12 +68,23 @@ export function TopAppBar({
             <Icon name="settings" />
           </button>
         ) : null}
-        <span
-          className="ml-1 flex size-8 items-center justify-center rounded-full border border-outline-variant bg-secondary-container text-[10px] font-bold text-on-secondary-container"
-          aria-hidden
-        >
-          {initialsBadge}
-        </span>
+        {onProfileClick ? (
+          <button
+            type="button"
+            onClick={onProfileClick}
+            className="ml-1 flex size-8 cursor-pointer items-center justify-center rounded-full border border-outline-variant bg-secondary-container text-[10px] font-bold text-on-secondary-container transition-colors hover:bg-secondary-container/80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-secondary"
+            aria-label="Open profile and settings"
+          >
+            {initialsBadge}
+          </button>
+        ) : (
+          <span
+            className="ml-1 flex size-8 items-center justify-center rounded-full border border-outline-variant bg-secondary-container text-[10px] font-bold text-on-secondary-container"
+            aria-hidden
+          >
+            {initialsBadge}
+          </span>
+        )}
       </div>
     </header>
   )

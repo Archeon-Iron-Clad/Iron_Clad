@@ -1,18 +1,53 @@
 import { useMutation } from 'convex/react'
+import { useEffect, useState } from 'react'
 import { Icon } from '../components/ui/Icon'
 import { PresenceBadge } from '../components/presence/PresenceBadge'
 import { api } from '../../convex/_generated/api'
 import { isConvexConfigured } from '../lib/convexClient'
 import { clearStoredSessionToken } from '../lib/sessionToken'
+import type { ThemePreference } from '../lib/theme'
+import { useTheme } from '../lib/theme'
 
 type Props = {
   userEmail: string
+  displayName: string | null
+  sessionExpiresAt: number
   sessionToken: string
 }
 
-export function SettingsPage({ userEmail, sessionToken }: Props) {
+function initialsPreview(name: string): string {
+  const trimmed = name.trim()
+  if (!trimmed) return '—'
+  const parts = trimmed.split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) {
+    const a = parts[0]![0]
+    const b = parts[parts.length - 1]![0]
+    if (a && b) return (a + b).toUpperCase()
+  }
+  const alnum = trimmed.replace(/[^a-zA-Z0-9]/g, '')
+  if (alnum.length >= 2) return alnum.slice(0, 2).toUpperCase()
+  if (alnum.length === 1) return (alnum + alnum).toUpperCase()
+  return trimmed.slice(0, 2).toUpperCase()
+}
+
+export function SettingsPage({
+  userEmail,
+  displayName,
+  sessionExpiresAt,
+  sessionToken,
+}: Props) {
   const convexReady = isConvexConfigured()
   const revokeSession = useMutation(api.session.revokeSession)
+  const setDisplayNameMutation = useMutation(api.session.setDisplayName)
+  const { preference, setPreference, isDark } = useTheme()
+
+  const [nameDraft, setNameDraft] = useState(displayName ?? '')
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle')
+
+  useEffect(() => {
+    setNameDraft(displayName ?? '')
+  }, [displayName])
 
   const onSignOut = async () => {
     try {
@@ -24,43 +59,156 @@ export function SettingsPage({ userEmail, sessionToken }: Props) {
     window.location.reload()
   }
 
+  const onSaveName = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setSaveState('saving')
+    try {
+      await setDisplayNameMutation({ sessionToken, displayName: nameDraft })
+      setSaveState('saved')
+      window.setTimeout(() => setSaveState('idle'), 2000)
+    } catch {
+      setSaveState('error')
+    }
+  }
+
+  const onCopyEmail = async () => {
+    try {
+      await navigator.clipboard.writeText(userEmail)
+      setCopyState('copied')
+      window.setTimeout(() => setCopyState('idle'), 2000)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const expiresLabel = new Date(sessionExpiresAt).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  })
+
+  const themeChoices: { id: ThemePreference; label: string; hint: string }[] = [
+    { id: 'system', label: 'System', hint: 'Match the device' },
+    { id: 'light', label: 'Light', hint: 'Always light' },
+    { id: 'dark', label: 'Dark', hint: 'Always dark' },
+  ]
+
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-8">
       <header>
-        <h1 className="text-2xl font-bold text-on-surface">Settings</h1>
+        <h1 className="text-2xl font-bold text-on-surface">Profile and settings</h1>
         <p className="mt-1 text-sm text-on-surface-variant">
-          Workspace preferences, identity, and connection to your backend.
+          How you appear in the workspace, appearance, and your session.
         </p>
       </header>
 
       <section className="rounded-xl border border-outline-variant bg-surface-bright p-6 shadow-sm">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-start">
+          <div className="flex shrink-0 flex-col items-center gap-2 sm:items-start">
+            <span
+              className="flex size-20 items-center justify-center rounded-full border-2 border-outline-variant bg-secondary-container text-lg font-bold text-on-secondary-container"
+              aria-hidden
+            >
+              {initialsPreview(nameDraft || userEmail)}
+            </span>
+            <p className="text-center text-[10px] uppercase tracking-wider text-on-surface-variant sm:text-left">
+              Preview
+            </p>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary-container text-on-secondary-container max-sm:hidden">
+                <Icon name="badge" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-sm font-semibold text-on-surface">Profile</h2>
+                <p className="mt-0.5 text-xs text-on-surface-variant">
+                  This name appears in the header, sidebar, and when collaborators see you in a document.
+                </p>
+
+                <form onSubmit={(e) => void onSaveName(e)} className="mt-4 space-y-3">
+                  <label className="block">
+                    <span className="text-xs font-medium text-on-surface-variant">Display name</span>
+                    <input
+                      type="text"
+                      value={nameDraft}
+                      onChange={(e) => setNameDraft(e.target.value)}
+                      maxLength={64}
+                      placeholder={userEmail.split('@')[0] ?? 'Your name'}
+                      className="mt-1 w-full rounded-lg border border-outline-variant bg-background px-3 py-2 text-sm text-on-surface placeholder:text-on-surface-variant/60 focus:outline focus:outline-2 focus:outline-secondary"
+                    />
+                  </label>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="submit"
+                      disabled={saveState === 'saving'}
+                      className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:opacity-90 disabled:opacity-60"
+                    >
+                      {saveState === 'saving' ? 'Saving…' : 'Save name'}
+                    </button>
+                    {saveState === 'saved' ? (
+                      <span className="text-xs font-medium text-secondary">Saved</span>
+                    ) : null}
+                    {saveState === 'error' ? (
+                      <span className="text-xs font-medium text-error">Could not save. Try again.</span>
+                    ) : null}
+                    <p className="w-full text-xs text-on-surface-variant">
+                      Leave blank to fall back to your email prefix everywhere.
+                    </p>
+                  </div>
+                </form>
+
+                <p className="mt-6 text-xs font-medium uppercase tracking-wider text-on-surface-variant">
+                  Email
+                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded-lg border border-outline-variant bg-background px-3 py-2 text-sm text-on-surface">
+                    {userEmail}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => void onCopyEmail()}
+                    className="shrink-0 rounded-lg border border-outline-variant px-3 py-2 text-xs font-semibold text-on-surface hover:bg-surface-container-high"
+                  >
+                    {copyState === 'copied' ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-outline-variant bg-surface-bright p-6 shadow-sm">
         <div className="flex items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-secondary-container text-on-secondary-container">
-            <Icon name="badge" />
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-tertiary-container text-on-tertiary-container">
+            <Icon name={isDark ? 'dark_mode' : 'light_mode'} />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="text-sm font-semibold text-on-surface">Identity</h2>
+            <h2 className="text-sm font-semibold text-on-surface">Appearance</h2>
             <p className="mt-0.5 text-xs text-on-surface-variant">
-              Your email labels this Convex session—sign out below to switch accounts.
+              Theme applies everywhere in this app. The sidebar footer still toggles light and dark quickly.
             </p>
-
-            <p className="mt-4 text-xs font-medium uppercase tracking-wider text-on-surface-variant">Current session</p>
-            <code className="mt-1 block truncate rounded-lg border border-outline-variant bg-background px-3 py-2 text-sm text-on-surface">
-              {userEmail}
-            </code>
-
-            <div className="mt-6 border-t border-outline-variant pt-6">
-              <p className="text-sm text-on-surface-variant">
-                To use a different email, sign out on this device and sign in again with another address.
-              </p>
-              <button
-                type="button"
-                onClick={() => void onSignOut()}
-                className="mt-4 rounded-lg border border-outline-variant bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:opacity-90"
-              >
-                Sign out
-              </button>
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              {themeChoices.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setPreference(c.id)}
+                  className={`rounded-lg border px-3 py-3 text-left transition-colors ${
+                    preference === c.id
+                      ? 'border-secondary bg-secondary-container font-semibold text-on-secondary-container'
+                      : 'border-outline-variant hover:bg-surface-container-high'
+                  }`}
+                >
+                  <span className="block text-sm">{c.label}</span>
+                  <span className="mt-0.5 block text-[11px] text-on-surface-variant">{c.hint}</span>
+                </button>
+              ))}
             </div>
+            <p className="mt-3 text-[11px] text-on-surface-variant">
+              Current look: <span className="font-medium text-on-surface">{isDark ? 'Dark' : 'Light'}</span>
+              {preference === 'system' ? ' (from your device)' : ''}
+            </p>
           </div>
         </div>
       </section>
@@ -85,6 +233,32 @@ export function SettingsPage({ userEmail, sessionToken }: Props) {
                 <code className="rounded bg-surface-container-high px-1 py-0.5">npx convex dev</code>.
               </p>
             )}
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-outline-variant bg-surface-bright p-6 shadow-sm">
+        <div className="flex items-start gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-surface-container-high text-on-surface-variant">
+            <Icon name="lock" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-sm font-semibold text-on-surface">Session</h2>
+            <p className="mt-1 text-xs text-on-surface-variant">
+              This device stays signed in until the session expires or you sign out.
+            </p>
+            <p className="mt-4 text-xs text-on-surface">
+              <span className="font-medium text-on-surface-variant">Valid until:</span> {expiresLabel}
+            </p>
+            <div className="mt-6 border-t border-outline-variant pt-6">
+              <button
+                type="button"
+                onClick={() => void onSignOut()}
+                className="rounded-lg border border-outline-variant bg-primary px-4 py-2 text-sm font-semibold text-on-primary hover:opacity-90"
+              >
+                Sign out on this device
+              </button>
+            </div>
           </div>
         </div>
       </section>

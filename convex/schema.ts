@@ -99,6 +99,8 @@ export default defineSchema({
   sessions: defineTable({
     token: v.string(),
     email: v.string(),
+    /** Shown in the UI and sent with presence heartbeats; optional. */
+    displayName: v.optional(v.string()),
     preferredUploadGroupId: v.optional(v.id("groups")),
     createdAt: v.number(),
     expiresAt: v.number(),

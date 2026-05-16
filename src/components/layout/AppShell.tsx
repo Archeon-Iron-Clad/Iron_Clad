@@ -23,6 +23,8 @@ type Props = {
   onExportRelease?: () => void
   exportDisabled?: boolean
   onTopBarSettingsClick?: () => void
+  /** Profile avatar opens the same settings area. */
+  onProfileClick?: () => void
   userInitials: string
   mainNotice?: ReactNode
   onNavigateToCases?: () => void
@@ -49,6 +51,7 @@ export function AppShell({
   onExportRelease,
   exportDisabled,
   onTopBarSettingsClick,
+  onProfileClick,
   userInitials,
   mainNotice,
   onNavigateToCases,
@@ -74,6 +77,7 @@ export function AppShell({
         onExportRelease={onExportRelease}
         exportDisabled={exportDisabled}
         onSettingsClick={onTopBarSettingsClick}
+        onProfileClick={onProfileClick}
         userInitials={userInitials}
       />
       <LeftSidebar
